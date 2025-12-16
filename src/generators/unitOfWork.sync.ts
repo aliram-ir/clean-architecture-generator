@@ -4,18 +4,18 @@ import { ProjectContext } from '../core/projectContext';
 
 /*
 |--------------------------------------------------------------------------
-| Typed UnitOfWork Sync (Correct Layering)
+| UnitOfWork Sync (Canonical – Non Entity Based)
 |--------------------------------------------------------------------------
-| ✅ IUnitOfWork → Application
-| ✅ UnitOfWork → Infrastructure
-| ✅ Typed repositories
-| ✅ Non-destructive
+| ✅ IUnitOfWork → Application.Interfaces.Base
+| ✅ UnitOfWork → Infrastructure.Repositories.Base
+| ✅ Transaction support
+| ✅ Idempotent
+| ✅ No entity coupling
 */
 
-export function syncUnitOfWork(ctx: ProjectContext, entity: string) {
-
-    syncInterface(ctx, entity);
-    syncImplementation(ctx, entity);
+export function syncUnitOfWork(ctx: ProjectContext) {
+    syncInterface(ctx);
+    syncImplementation(ctx);
 }
 
 /*
@@ -24,138 +24,117 @@ export function syncUnitOfWork(ctx: ProjectContext, entity: string) {
 |--------------------------------------------------------------------------
 */
 
-function syncInterface(ctx: ProjectContext, entity: string) {
+function syncInterface(ctx: ProjectContext) {
 
-    const ifaceDir = path.join(
+    const dir = path.join(
         ctx.layers.application,
         'Interfaces',
-        'Repositories'
+        'Base'
     );
 
-    const ifacePath = path.join(
-        ifaceDir,
-        'IUnitOfWork.cs'
-    );
+    const filePath = path.join(dir, 'IUnitOfWork.cs');
 
-    fs.mkdirSync(ifaceDir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
 
-    if (!fs.existsSync(ifacePath)) {
-        fs.writeFileSync(
-            ifacePath,
-            `namespace ${ctx.solutionName}.Application.Interfaces.Repositories
+    if (fs.existsSync(filePath)) return;
+
+    fs.writeFileSync(
+        filePath,
+        `using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ${ctx.solutionName}.Application.Interfaces.Base
 {
-    public interface IUnitOfWork
+    /// <summary>
+    /// واحد کار – مدیریت تراکنش و Repository ها
+    /// </summary>
+    public interface IUnitOfWork : IDisposable
     {
+        Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+        Task BeginTransactionAsync();
+        Task CommitTransactionAsync();
+        Task RollbackTransactionAsync();
     }
 }
-`);
-    }
-
-    let content = fs.readFileSync(ifacePath, 'utf8');
-
-    const plural = pluralize(entity);
-
-    const property =
-        `        I${entity}Repository ${plural} { get; }`;
-
-    if (!content.includes(property)) {
-        content = content.replace(
-            '}',
-            `${property}\n    }`
-        );
-        fs.writeFileSync(ifacePath, content, 'utf8');
-    }
+`, 'utf8');
 }
 
 /*
 |--------------------------------------------------------------------------
-| UnitOfWork Implementation (Infrastructure)
+| UnitOfWork (Infrastructure)
 |--------------------------------------------------------------------------
 */
 
-function syncImplementation(ctx: ProjectContext, entity: string) {
+function syncImplementation(ctx: ProjectContext) {
 
-    const implDir = path.join(
+    const dir = path.join(
         ctx.layers.infrastructure,
-        'Repositories'
+        'Repositories',
+        'Base'
     );
 
-    const implPath = path.join(
-        implDir,
-        'UnitOfWork.cs'
-    );
+    const filePath = path.join(dir, 'UnitOfWork.cs');
 
-    fs.mkdirSync(implDir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
 
-    if (!fs.existsSync(implPath)) {
-        fs.writeFileSync(
-            implPath,
-            unitOfWorkTemplate(ctx)
-        );
-    }
+    if (fs.existsSync(filePath)) return;
 
-    let content = fs.readFileSync(implPath, 'utf8');
-    const plural = pluralize(entity);
-
-    const field =
-        `        private I${entity}Repository? _${plural};`;
-
-    const prop =
-        `        public I${entity}Repository ${plural} =>
-            _${plural} ??= new ${entity}Repository(_context);`;
-
-    if (!content.includes(field)) {
-        content = content.replace(
-            '// === Repositories ===',
-            `// === Repositories ===\n${field}\n`
-        );
-    }
-
-    if (!content.includes(` ${plural} =>`)) {
-        content = content.replace(
-            '// === Properties ===',
-            `// === Properties ===\n${prop}\n`
-        );
-    }
-
-    fs.writeFileSync(implPath, content, 'utf8');
-}
-
-/*
-|--------------------------------------------------------------------------
-| Template
-|--------------------------------------------------------------------------
-*/
-
-function unitOfWorkTemplate(ctx: ProjectContext): string {
-    return `using ${ctx.solutionName}.Application.Interfaces.Repositories;
+    fs.writeFileSync(
+        filePath,
+        `using Microsoft.EntityFrameworkCore.Storage;
+using ${ctx.solutionName}.Application.Interfaces.Base;
 using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
 
-namespace ${ctx.solutionName}.Infrastructure.Repositories
+namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
 {
+    /// <summary>
+    /// پیاده‌سازی UnitOfWork
+    /// </summary>
     public class UnitOfWork : IUnitOfWork
     {
         private readonly ApplicationDbContext _context;
+        private IDbContextTransaction? _transaction;
 
         public UnitOfWork(ApplicationDbContext context)
         {
             _context = context;
         }
 
-        // === Repositories ===
+        public async Task BeginTransactionAsync()
+        {
+            if (_transaction != null) return;
+            _transaction = await _context.Database.BeginTransactionAsync();
+        }
 
-        // === Properties ===
+        public async Task CommitTransactionAsync()
+        {
+            if (_transaction == null) return;
+
+            await _transaction.CommitAsync();
+            await _transaction.DisposeAsync();
+            _transaction = null;
+        }
+
+        public async Task RollbackTransactionAsync()
+        {
+            if (_transaction == null) return;
+
+            await _transaction.RollbackAsync();
+            await _transaction.DisposeAsync();
+            _transaction = null;
+        }
+
+        public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+            => await _context.SaveChangesAsync(cancellationToken);
+
+        public void Dispose()
+        {
+            _transaction?.Dispose();
+            _context.Dispose();
+        }
     }
 }
-`;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Helpers
-|--------------------------------------------------------------------------
-*/
-
-function pluralize(name: string): string {
-    return name.endsWith('s') ? name : `${name}s`;
+`, 'utf8');
 }

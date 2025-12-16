@@ -16,9 +16,10 @@ import { syncDependencyInjection } from '../generators/dependencyInjection.sync'
 |--------------------------------------------------------------------------
 | Generate From Entity Command
 |--------------------------------------------------------------------------
-| ✅ Always generates Fluent configuration
-| ✅ Always syncs DbContext
-| ✅ Idempotent capability
+| ✅ Fluent Configuration همیشه ساخته می‌شود
+| ✅ DbContext همیشه Sync می‌شود
+| ✅ UnitOfWork فقط یک‌بار و Canonical ساخته می‌شود
+| ✅ Idempotent
 */
 
 export function registerGenerateFromEntityCommand() {
@@ -29,8 +30,10 @@ export function registerGenerateFromEntityCommand() {
 
             if (!uri || !uri.fsPath.endsWith('.cs')) return;
 
-            const entity = path.basename(uri.fsPath, '.cs'); // Entity name from URI
+            // نام Entity از روی فایل انتخاب‌شده
+            const entity = path.basename(uri.fsPath, '.cs');
 
+            // Resolve Project Context
             const ctx = resolveProjectContext(uri.fsPath);
             if (!ctx) {
                 vscode.window.showErrorMessage('❌ Unable to resolve project context');
@@ -42,16 +45,18 @@ export function registerGenerateFromEntityCommand() {
             const useAutoDI = config.get<boolean>('useAutoDI') ?? true;
 
             // ----------------------------------
-            // ✅ Core generation
+            // ✅ Core Generation
             // ----------------------------------
             generateRepository(ctx, entity);
-            syncUnitOfWork(ctx, entity);
-            // ✅ Fixed line: Pass Entity file path for DTO generation
+
+            // ✅ UnitOfWork: Canonical & Non-Entity-Based
+            syncUnitOfWork(ctx);
+
             generateDtos(ctx, entity, uri.fsPath);
             generateService(ctx, entity);
 
             // ----------------------------------
-            // ✅ Mandatory synchronizations (always performed)
+            // ✅ Mandatory Synchronization
             // ----------------------------------
             generateFluentConfiguration(ctx, entity);
             syncDbContext(ctx, entity);

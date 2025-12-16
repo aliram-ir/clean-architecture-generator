@@ -1,3 +1,5 @@
+![Clean Architecture Generator Demo](gif.gif)
+
 # Clean Architecture Generator
 
 🚀 A VS Code extension to automatically scaffold **Clean Architecture–based .NET solutions** using real‑world, production‑ready best practices.
@@ -115,30 +117,31 @@ Infrastructure
 
 ```
 📦 Solution
- ┣ 📂 Domain
- ┃ ┣ 📂 Entities
- ┃ ┣ 📂 Interfaces
- ┃ ┃ ┣ 📂 Base
- ┃ ┃ ┗ 📂 Repositories
- ┃
- ┣ 📂 Application
- ┃ ┣ 📂 DTOs
- ┃ ┃ ┗ 📂 {EntityPlural}
- ┃ ┣ 📂 Interfaces
- ┃ ┃ ┗ 📂 Services
- ┃ ┣ 📂 Services
- ┃ ┣ 📂 Mappings
- ┃
- ┣ 📂 Infrastructure
- ┃ ┣ 📂 Persistence
- ┃ ┃ ┣ 📂 Contexts
- ┃ ┃ ┗ 📂 Configurations
- ┃ ┣ 📂 Repositories
- ┃ ┃ ┗ 📂 Base
- ┃
- ┣ 📂 DI
- ┃ ┗ 📂 Extensions
- ┗ 📂 Shared
+┣ 📂 Domain
+┃ ┣ 📂 Entities
+┃ ┣ 📂 Interfaces
+┃ ┃ ┣ 📂 Base
+┃ ┃ ┗ 📂 Repositories
+┃
+┣ 📂 Application
+┃ ┣ 📂 DTOs
+┃ ┃ ┗ 📂 {EntityPlural}
+┃ ┣ 📂 Interfaces
+┃ ┃ ┗ 📂 Services
+┃ ┣ 📂 Services
+┃ ┣ 📂 Mappings
+┃
+┣ 📂 Infrastructure
+┃ ┣ 📂 Persistence
+┃ ┃ ┣ 📂 Contexts
+┃ ┃ ┗ 📂 Configurations
+┃ ┣ 📂 Repositories
+┃ ┃ ┗ 📂 Base
+┃
+┣ 📂 DI
+┃ ┗ 📂 Extensions
+┃
+┗ 📂 Shared
 ```
 
 ---

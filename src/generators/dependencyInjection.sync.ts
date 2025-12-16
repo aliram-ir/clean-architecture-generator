@@ -5,19 +5,19 @@ import { writeIfMissing } from '../core/helpers';
 
 /*
 |--------------------------------------------------------------------------
-| Dependency Injection Sync (FINAL – FIXED)
+| Dependency Injection Sync (Canonical – FINAL)
 |--------------------------------------------------------------------------
-| ✅ DI file ALWAYS created
-| ✅ AutoMapper Assembly Scan
-| ✅ IUnitOfWork from Application
-| ✅ Repositories from Application.Interfaces.Repositories
-| ✅ Services from Application.Interfaces.Services
+| ✅ DI file always exists
+| ✅ AutoMapper Application-level scan
+| ✅ IUnitOfWork → Application.Interfaces.Base
+| ✅ UnitOfWork → Infrastructure.Repositories.Base
+| ✅ Repositories → Application.Interfaces.Repositories
+| ✅ Services → Application.Interfaces.Services
 | ✅ Fully Idempotent
 */
 
 export function syncDependencyInjection(ctx: ProjectContext) {
 
-    // ✅ DI layer MUST exist (created during solution creation)
     const diRoot = ctx.layers.di;
     if (!diRoot) return;
 
@@ -29,7 +29,6 @@ export function syncDependencyInjection(ctx: ProjectContext) {
 
     fs.mkdirSync(extensionsDir, { recursive: true });
 
-    // ✅ Always create file if missing
     writeIfMissing(diFilePath, diTemplate(ctx));
 
     let content = fs.readFileSync(diFilePath, 'utf8');
@@ -55,8 +54,9 @@ function syncAutoMapper(ctx: ProjectContext, content: string) {
     }
 
     const registration =
-        `            services.AddAutoMapper(` +
-        `typeof(${ctx.solutionName}.Application.Mappings.${ctx.solutionName}AutoMapperAnchor).Assembly);`;
+        `            services.AddAutoMapper(
+                typeof(${ctx.solutionName}.Application.Mappings.${ctx.solutionName}AutoMapperAnchor).Assembly
+            );`;
 
     return insertOnce(
         content,
@@ -69,8 +69,6 @@ function syncAutoMapper(ctx: ProjectContext, content: string) {
 |--------------------------------------------------------------------------
 | UnitOfWork
 |--------------------------------------------------------------------------
-| ✅ IUnitOfWork → Application
-| ✅ UnitOfWork → Infrastructure
 */
 
 function syncUnitOfWork(content: string) {
@@ -89,8 +87,6 @@ function syncUnitOfWork(content: string) {
 |--------------------------------------------------------------------------
 | Repositories (Typed)
 |--------------------------------------------------------------------------
-| ✅ Interfaces from Application.Interfaces.Repositories
-| ✅ Implementations from Infrastructure.Repositories
 */
 
 function syncRepositories(ctx: ProjectContext, content: string) {
@@ -111,7 +107,7 @@ function syncRepositories(ctx: ProjectContext, content: string) {
     }
 
     const interfaces = fs.readdirSync(repoInterfacesDir)
-        .filter(f => f.endsWith('Repository.cs') && f.startsWith('I'));
+        .filter(f => f.startsWith('I') && f.endsWith('Repository.cs'));
 
     for (const file of interfaces) {
 
@@ -149,7 +145,7 @@ function syncServices(ctx: ProjectContext, content: string) {
     }
 
     const services = fs.readdirSync(servicesDir)
-        .filter(f => f.endsWith('Service.cs'));
+        .filter(f => f.endsWith('Service.cs') && !f.startsWith('Base'));
 
     for (const file of services) {
 
@@ -200,8 +196,10 @@ function insertOnce(
 function diTemplate(ctx: ProjectContext): string {
 
     return `using Microsoft.Extensions.DependencyInjection;
+using ${ctx.solutionName}.Application.Interfaces.Base;
 using ${ctx.solutionName}.Application.Interfaces.Repositories;
 using ${ctx.solutionName}.Application.Interfaces.Services;
+using ${ctx.solutionName}.Infrastructure.Repositories.Base;
 using ${ctx.solutionName}.Infrastructure.Repositories;
 
 namespace ${ctx.solutionName}.DI.Extensions

@@ -4,6 +4,7 @@ import { detectLayers, DetectedLayers } from './layerDetector';
 
 /**
  * Project Context
+ * کانتکست سراسری پروژه
  */
 export interface ProjectContext {
     rootPath: string;
@@ -14,6 +15,7 @@ export interface ProjectContext {
 
 /**
  * Universal Project Resolver
+ * تشخیص Solution یا Project و لایه‌های Clean Architecture
  */
 export function resolveProjectContext(
     startFile: string
@@ -21,14 +23,15 @@ export function resolveProjectContext(
 
     const startDir = path.dirname(startFile);
 
-    // 🔍 Find solution
-    const slnRoot = findUp(startDir, d =>
-        fs.readdirSync(d).some(f => f.endsWith('.sln'))
+    // 🔍 Search for Solution (.sln)
+    const slnRoot = findUp(startDir, dir =>
+        fs.existsSync(dir) &&
+        fs.readdirSync(dir).some(f => f.endsWith('.sln'))
     );
 
     if (slnRoot) {
-        const sln = fs.readdirSync(slnRoot).find(f => f.endsWith('.sln'))!;
-        const solutionName = path.basename(sln, '.sln');
+        const slnFile = fs.readdirSync(slnRoot).find(f => f.endsWith('.sln'))!;
+        const solutionName = path.basename(slnFile, '.sln');
 
         return {
             rootPath: slnRoot,
@@ -38,14 +41,15 @@ export function resolveProjectContext(
         };
     }
 
-    // 🔁 Fallback to nearest csproj
-    const csprojRoot = findUp(startDir, d =>
-        fs.readdirSync(d).some(f => f.endsWith('.csproj'))
+    // 🔁 Fallback: single csproj mode
+    const csprojRoot = findUp(startDir, dir =>
+        fs.existsSync(dir) &&
+        fs.readdirSync(dir).some(f => f.endsWith('.csproj'))
     );
 
     if (csprojRoot) {
-        const csproj = fs.readdirSync(csprojRoot).find(f => f.endsWith('.csproj'))!;
-        const projectName = path.basename(csproj, '.csproj');
+        const csprojFile = fs.readdirSync(csprojRoot).find(f => f.endsWith('.csproj'))!;
+        const projectName = path.basename(csprojFile, '.csproj');
 
         return {
             rootPath: csprojRoot,
@@ -60,6 +64,7 @@ export function resolveProjectContext(
 
 /**
  * Utility: find directory upwards
+ * جستجوی پوشه‌ها به سمت بالا
  */
 function findUp(
     start: string,
