@@ -1,144 +1,161 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { pluralize, writeIfMissing } from '../core/helpers';
 import { ProjectContext } from '../core/projectContext';
 
 /*
 |--------------------------------------------------------------------------
-| Typed UnitOfWork Sync
+| Typed UnitOfWork Sync (Correct Layering)
 |--------------------------------------------------------------------------
-| ✅ Enterprise Pattern (Lazy + Typed)
+| ✅ IUnitOfWork → Application
+| ✅ UnitOfWork → Infrastructure
+| ✅ Typed repositories
 | ✅ Non-destructive
-| ✅ Idempotent
-| ✅ Matches user-provided C# implementation EXACTLY
 */
 
-export function syncUnitOfWork(
-    ctx: ProjectContext,
-    entity: string
-) {
-    const entityName = toPascalCase(entity);
-    const plural = pluralize(entityName);
-    const pluralLower = plural.charAt(0).toLowerCase() + plural.slice(1);
+export function syncUnitOfWork(ctx: ProjectContext, entity: string) {
 
-    const contractsPath = path.join(
-        ctx.layers.domain,
+    syncInterface(ctx, entity);
+    syncImplementation(ctx, entity);
+}
+
+/*
+|--------------------------------------------------------------------------
+| IUnitOfWork (Application)
+|--------------------------------------------------------------------------
+*/
+
+function syncInterface(ctx: ProjectContext, entity: string) {
+
+    const ifaceDir = path.join(
+        ctx.layers.application,
         'Interfaces',
+        'Repositories'
+    );
+
+    const ifacePath = path.join(
+        ifaceDir,
         'IUnitOfWork.cs'
     );
 
-    const implementationPath = path.join(
+    fs.mkdirSync(ifaceDir, { recursive: true });
+
+    if (!fs.existsSync(ifacePath)) {
+        fs.writeFileSync(
+            ifacePath,
+            `namespace ${ctx.solutionName}.Application.Interfaces.Repositories
+{
+    public interface IUnitOfWork
+    {
+    }
+}
+`);
+    }
+
+    let content = fs.readFileSync(ifacePath, 'utf8');
+
+    const plural = pluralize(entity);
+
+    const property =
+        `        I${entity}Repository ${plural} { get; }`;
+
+    if (!content.includes(property)) {
+        content = content.replace(
+            '}',
+            `${property}\n    }`
+        );
+        fs.writeFileSync(ifacePath, content, 'utf8');
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| UnitOfWork Implementation (Infrastructure)
+|--------------------------------------------------------------------------
+*/
+
+function syncImplementation(ctx: ProjectContext, entity: string) {
+
+    const implDir = path.join(
         ctx.layers.infrastructure,
-        'Repositories',
-        'Base',
+        'Repositories'
+    );
+
+    const implPath = path.join(
+        implDir,
         'UnitOfWork.cs'
     );
 
-    syncUnitOfWorkInterface(contractsPath, entityName, plural);
-    syncUnitOfWorkImplementation(
-        implementationPath,
-        entityName,
-        plural,
-        pluralLower
-    );
+    fs.mkdirSync(implDir, { recursive: true });
+
+    if (!fs.existsSync(implPath)) {
+        fs.writeFileSync(
+            implPath,
+            unitOfWorkTemplate(ctx)
+        );
+    }
+
+    let content = fs.readFileSync(implPath, 'utf8');
+    const plural = pluralize(entity);
+
+    const field =
+        `        private I${entity}Repository? _${plural};`;
+
+    const prop =
+        `        public I${entity}Repository ${plural} =>
+            _${plural} ??= new ${entity}Repository(_context);`;
+
+    if (!content.includes(field)) {
+        content = content.replace(
+            '// === Repositories ===',
+            `// === Repositories ===\n${field}\n`
+        );
+    }
+
+    if (!content.includes(` ${plural} =>`)) {
+        content = content.replace(
+            '// === Properties ===',
+            `// === Properties ===\n${prop}\n`
+        );
+    }
+
+    fs.writeFileSync(implPath, content, 'utf8');
 }
 
 /*
 |--------------------------------------------------------------------------
-| Interface Sync
+| Template
 |--------------------------------------------------------------------------
 */
 
-function syncUnitOfWorkInterface(
-    filePath: string,
-    entityName: string,
-    plural: string
-) {
-    writeIfMissing(
-        filePath,
-        `namespace Domain.Interfaces
+function unitOfWorkTemplate(ctx: ProjectContext): string {
+    return `using ${ctx.solutionName}.Application.Interfaces.Repositories;
+using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
+
+namespace ${ctx.solutionName}.Infrastructure.Repositories
 {
-    public interface IUnitOfWork : IDisposable
+    public class UnitOfWork : IUnitOfWork
     {
-        Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+        private readonly ApplicationDbContext _context;
 
-        ${repositoryProperty(entityName, plural)}
+        public UnitOfWork(ApplicationDbContext context)
+        {
+            _context = context;
+        }
 
-        Task BeginTransactionAsync(CancellationToken cancellationToken = default);
-        Task CommitTransactionAsync(CancellationToken cancellationToken = default);
-        Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
+        // === Repositories ===
+
+        // === Properties ===
     }
 }
-`
-    );
-
-    let content = fs.readFileSync(filePath, 'utf8');
-
-    const property = `        ${repositoryProperty(entityName, plural)}\n`;
-
-    if (!content.includes(property.trim())) {
-        content = content.replace(
-            /Task<int> SaveChangesAsync[^{]*\);/,
-            match => `${match}\n\n${property}`
-        );
-
-        fs.writeFileSync(filePath, content, 'utf8');
-    }
-}
-
-/*
-|--------------------------------------------------------------------------
-| Implementation Sync
-|--------------------------------------------------------------------------
-*/
-
-function syncUnitOfWorkImplementation(
-    filePath: string,
-    entityName: string,
-    plural: string,
-    pluralLower: string
-) {
-    if (!fs.existsSync(filePath)) return;
-
-    let content = fs.readFileSync(filePath, 'utf8');
-
-    const field = `        private I${entityName}Repository? _${pluralLower};`;
-    const property = `
-        public I${entityName}Repository ${plural} =>
-            _${pluralLower} ??= new ${entityName}Repository(_context);
 `;
-
-    // ✅ Private field
-    if (!content.includes(field.trim())) {
-        content = content.replace(
-            /\/\/ Lazy initialization برای Repository‌ها/,
-            match => `${match}\n${field}`
-        );
-    }
-
-    // ✅ Public property
-    if (!content.includes(`I${entityName}Repository ${plural}`)) {
-        content = content.replace(
-            /\/\/ === Properties ===/,
-            match => `${match}\n${property}`
-        );
-    }
-
-    fs.writeFileSync(filePath, content, 'utf8');
 }
 
 /*
 |--------------------------------------------------------------------------
-| Utils
+| Helpers
 |--------------------------------------------------------------------------
 */
 
-function repositoryProperty(entity: string, plural: string) {
-    return `I${entity}Repository ${plural} { get; }`;
-}
-
-function toPascalCase(name: string): string {
-    return name
-        .replace(/[-_ ]+(.)/g, (_, c) => c.toUpperCase())
-        .replace(/^(.)/, c => c.toUpperCase());
+function pluralize(name: string): string {
+    return name.endsWith('s') ? name : `${name}s`;
 }

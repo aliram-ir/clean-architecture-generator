@@ -5,20 +5,21 @@ import { writeIfMissing } from '../core/helpers';
 
 /*
 |--------------------------------------------------------------------------
-| Dependency Injection Sync
+| Dependency Injection Sync (FINAL – FIXED)
 |--------------------------------------------------------------------------
-| ✅ AutoMapper Profile Auto Scan
-| ✅ Typed UnitOfWork
-| ✅ Typed Repositories
-| ✅ Application Services
-| ✅ Non-destructive & Idempotent
+| ✅ DI file ALWAYS created
+| ✅ AutoMapper Assembly Scan
+| ✅ IUnitOfWork from Application
+| ✅ Repositories from Application.Interfaces.Repositories
+| ✅ Services from Application.Interfaces.Services
+| ✅ Fully Idempotent
 */
 
 export function syncDependencyInjection(ctx: ProjectContext) {
 
-    const diRoot =
-        ctx.layers.di ??
-        path.join(ctx.rootPath, `${ctx.solutionName}.DI`);
+    // ✅ DI layer MUST exist (created during solution creation)
+    const diRoot = ctx.layers.di;
+    if (!diRoot) return;
 
     const extensionsDir = path.join(diRoot, 'Extensions');
     const diFilePath = path.join(
@@ -28,6 +29,7 @@ export function syncDependencyInjection(ctx: ProjectContext) {
 
     fs.mkdirSync(extensionsDir, { recursive: true });
 
+    // ✅ Always create file if missing
     writeIfMissing(diFilePath, diTemplate(ctx));
 
     let content = fs.readFileSync(diFilePath, 'utf8');
@@ -42,30 +44,24 @@ export function syncDependencyInjection(ctx: ProjectContext) {
 
 /*
 |--------------------------------------------------------------------------
-| AutoMapper Auto Scan
+| AutoMapper – Application Assembly Scan
 |--------------------------------------------------------------------------
-| ✅ Scans Application assembly
-| ✅ Detects all Profile classes automatically
 */
 
 function syncAutoMapper(ctx: ProjectContext, content: string) {
 
-    const using = `using AutoMapper;`;
-    if (!content.includes(using)) {
-        content = using + '\n' + content;
+    if (content.includes('AddAutoMapper')) {
+        return content;
     }
 
     const registration =
         `            services.AddAutoMapper(` +
         `typeof(${ctx.solutionName}.Application.Mappings.${ctx.solutionName}AutoMapperAnchor).Assembly);`;
 
-    if (content.includes('AddAutoMapper(')) {
-        return content;
-    }
-
-    return content.replace(
+    return insertOnce(
+        content,
         '// === AutoMapper ===',
-        `// === AutoMapper ===\n${registration}`
+        registration
     );
 }
 
@@ -73,6 +69,8 @@ function syncAutoMapper(ctx: ProjectContext, content: string) {
 |--------------------------------------------------------------------------
 | UnitOfWork
 |--------------------------------------------------------------------------
+| ✅ IUnitOfWork → Application
+| ✅ UnitOfWork → Infrastructure
 */
 
 function syncUnitOfWork(content: string) {
@@ -80,13 +78,10 @@ function syncUnitOfWork(content: string) {
     const registration =
         `            services.AddScoped<IUnitOfWork, UnitOfWork>();`;
 
-    if (content.includes(registration.trim())) {
-        return content;
-    }
-
-    return content.replace(
+    return insertOnce(
+        content,
         '// === UnitOfWork ===',
-        `// === UnitOfWork ===\n${registration}`
+        registration
     );
 }
 
@@ -94,13 +89,16 @@ function syncUnitOfWork(content: string) {
 |--------------------------------------------------------------------------
 | Repositories (Typed)
 |--------------------------------------------------------------------------
+| ✅ Interfaces from Application.Interfaces.Repositories
+| ✅ Implementations from Infrastructure.Repositories
 */
 
 function syncRepositories(ctx: ProjectContext, content: string) {
 
     const repoInterfacesDir = path.join(
-        ctx.layers.domain,
-        'Interfaces'
+        ctx.layers.application,
+        'Interfaces',
+        'Repositories'
     );
 
     const repoImplDir = path.join(
@@ -113,7 +111,7 @@ function syncRepositories(ctx: ProjectContext, content: string) {
     }
 
     const interfaces = fs.readdirSync(repoInterfacesDir)
-        .filter(f => f.endsWith('Repository.cs'));
+        .filter(f => f.endsWith('Repository.cs') && f.startsWith('I'));
 
     for (const file of interfaces) {
 
@@ -123,12 +121,11 @@ function syncRepositories(ctx: ProjectContext, content: string) {
         const registration =
             `            services.AddScoped<${iface}, ${impl}>();`;
 
-        if (!content.includes(registration.trim())) {
-            content = content.replace(
-                '// === Repositories ===',
-                `// === Repositories ===\n${registration}`
-            );
-        }
+        content = insertOnce(
+            content,
+            '// === Repositories ===',
+            registration
+        );
     }
 
     return content;
@@ -162,15 +159,36 @@ function syncServices(ctx: ProjectContext, content: string) {
         const registration =
             `            services.AddScoped<${iface}, ${service}>();`;
 
-        if (!content.includes(registration.trim())) {
-            content = content.replace(
-                '// === Application Services ===',
-                `// === Application Services ===\n${registration}`
-            );
-        }
+        content = insertOnce(
+            content,
+            '// === Application Services ===',
+            registration
+        );
     }
 
     return content;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Helpers
+|--------------------------------------------------------------------------
+*/
+
+function insertOnce(
+    content: string,
+    marker: string,
+    line: string
+): string {
+
+    if (content.includes(line)) {
+        return content;
+    }
+
+    return content.replace(
+        marker,
+        `${marker}\n${line}`
+    );
 }
 
 /*
@@ -182,10 +200,9 @@ function syncServices(ctx: ProjectContext, content: string) {
 function diTemplate(ctx: ProjectContext): string {
 
     return `using Microsoft.Extensions.DependencyInjection;
+using ${ctx.solutionName}.Application.Interfaces.Repositories;
 using ${ctx.solutionName}.Application.Interfaces.Services;
-using ${ctx.solutionName}.Domain.Interfaces;
 using ${ctx.solutionName}.Infrastructure.Repositories;
-using ${ctx.solutionName}.Infrastructure.Repositories.Base;
 
 namespace ${ctx.solutionName}.DI.Extensions
 {
