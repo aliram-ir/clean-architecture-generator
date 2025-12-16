@@ -1,0 +1,125 @@
+{
+  "publisher": "AliRamezani",
+  "author": {
+    "name": "Ali Ramezani"
+  },
+  "name": "clean-architecture-generator-aliram",
+  "displayName": "Clean Architecture Generator by AliRamezani",
+  "description": "Generate and scaffold Clean Architecture projects for .NET with repositories, services, DTOs, DbContext, DI sync and API controllers.",
+  "version": "2.1.0",
+  "icon": "icon.png",
+  "homepage": "https://github.com/aliram-ir/clean-architecture-generator",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aliram-ir/clean-architecture-generator"
+  },
+  "bugs": {
+    "url": "https://github.com/aliram-ir/clean-architecture-generator/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.58.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other",
+    "Snippets"
+  ],
+  "keywords": [
+    "clean architecture",
+    "dotnet",
+    "aspnet",
+    "csharp",
+    "repository pattern",
+    "unit of work",
+    "code generator",
+    "scaffolding",
+    "ddd",
+    "api controller",
+    "dependency injection",
+    "entity framework"
+  ],
+  "activationEvents": [
+    "onLanguage:csharp",
+    "onCommand:cleanArch.createSolution",
+    "onCommand:cleanArch.generateFromEntity",
+    "onCommand:cleanArch.generateController"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cleanArch.createSolution",
+        "title": "Clean Architecture: Create Solution"
+      },
+      {
+        "command": "cleanArch.generateFromEntity",
+        "title": "Clean Architecture: Generate Application Stack"
+      },
+      {
+        "command": "cleanArch.generateController",
+        "title": "Clean Architecture: Generate API Controller"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "when": "resourceExtname == .cs",
+          "command": "cleanArch.generateFromEntity",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceExtname == .cs && resourceFilename =~ /Service\\.cs$/",
+          "command": "cleanArch.generateController",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "when": "resourceLangId == csharp",
+          "command": "cleanArch.generateFromEntity",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceLangId == csharp && resourceFilename =~ /Service\\.cs$/",
+          "command": "cleanArch.generateController",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Clean Architecture Generator (AliRamezani)",
+      "properties": {
+        "cleanArchitectureGenerator.useAutoMapper": {
+          "type": "boolean",
+          "default": true,
+          "description": "Generate AutoMapper profiles for services"
+        },
+        "cleanArchitectureGenerator.useMemoryCache": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable MemoryCache usage in generated services"
+        },
+        "cleanArchitectureGenerator.useAutoDI": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically generate DI registration for repositories and services"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.58.0",
+    "@types/node": "22.x",
+    "typescript": "^5.9.3",
+    "ts-loader": "^9.5.4",
+    "webpack": "^5.103.0",
+    "webpack-cli": "^6.0.1"
+  }
+}
