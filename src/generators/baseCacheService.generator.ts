@@ -2,41 +2,42 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ProjectContext } from '../core/projectContext';
 
-export function generateBaseCacheService(
-    ctx: ProjectContext
-): void {
+/*
+|--------------------------------------------------------------------------
+| BaseCacheService Generator (Canonical)
+|--------------------------------------------------------------------------
+| ✅ Single Source
+| ✅ Non‑destructive
+| ✅ Required by all Cached Services
+*/
 
-    const servicesBasePath = path.join(
+export function generateBaseCacheService(ctx: ProjectContext): void {
+
+    const basePath = path.join(
         ctx.layers.application,
         'Services',
         'Base'
     );
 
-    const filePath = path.join(
-        servicesBasePath,
-        'BaseCacheService.cs'
-    );
+    const filePath = path.join(basePath, 'BaseCacheService.cs');
 
     if (fs.existsSync(filePath))
         return;
 
-    fs.mkdirSync(servicesBasePath, { recursive: true });
+    fs.mkdirSync(basePath, { recursive: true });
 
-    const content = `using System;
-using Microsoft.Extensions.Caching.Memory;
+    fs.writeFileSync(
+        filePath,
+        `using Microsoft.Extensions.Caching.Memory;
+using System;
+using System.Text.Json;
 
 namespace ${ctx.solutionName}.Application.Services.Base
 {
-    /// <summary>
-    /// Base class for cached application services
-    /// </summary>
     public abstract class BaseCacheService
     {
         protected readonly IMemoryCache _cache;
-
-        // ✅ Default cache duration (5 minutes)
-        protected readonly TimeSpan _defaultCacheDuration =
-            TimeSpan.FromMinutes(5);
+        protected readonly TimeSpan _defaultCacheDuration = TimeSpan.FromMinutes(5);
 
         protected BaseCacheService(IMemoryCache cache)
         {
@@ -45,22 +46,24 @@ namespace ${ctx.solutionName}.Application.Services.Base
 
         protected string BuildCacheKey(
             string methodName,
-            params object[] parameters
+            params object?[] parameters
         )
         {
-            return $"{GetType().Name}:{methodName}:{string.Join(":", parameters)}";
-        }
+            var key = methodName;
 
-        protected void InvalidateCache(
-            string methodName,
-            params object[] parameters
-        )
-        {
-            _cache.Remove(BuildCacheKey(methodName, parameters));
+            foreach (var param in parameters)
+            {
+                if (param == null)
+                    continue;
+
+                key += ":" + JsonSerializer.Serialize(param);
+            }
+
+            return key;
         }
     }
 }
-`;
-
-    fs.writeFileSync(filePath, content, 'utf8');
+`,
+        'utf8'
+    );
 }

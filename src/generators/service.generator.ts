@@ -18,10 +18,10 @@ function toPascalCase(name: string): string {
 |--------------------------------------------------------------------------
 | Service Generator (Canonical – Locked)
 |--------------------------------------------------------------------------
-| ✅ Golden Sample Driven (za)
-| ✅ Correct IRepository Contract (Remove)
-| ✅ Correct IUnitOfWork Namespace
-| ✅ Cache Invalidation Fixed
+| ✅ DTO Namespace = lowercase (Linux / CI safe)
+| ✅ Golden Sample za
+| ✅ Correct UoW / Repo contract
+| ✅ Cache Invalidation FIXED
 | ✅ One‑Shot – Frozen
 */
 
@@ -30,9 +30,10 @@ export function generateService(
     entity: string
 ): void {
 
-    const entityName = toPascalCase(entity);
-    const plural = pluralize(entityName);
-    const repoProperty = plural;
+    const entityName = toPascalCase(entity);              // User
+    const plural = pluralize(entityName);                 // Users
+    const dtoNamespace = plural.toLowerCase();            // users ✅
+    const repoProperty = plural;                           // Users (UoW)
 
     const applicationRoot = ctx.layers.application;
 
@@ -59,7 +60,7 @@ export function generateService(
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using ${ctx.solutionName}.Application.DTOs.${plural};
+using ${ctx.solutionName}.Application.DTOs.${dtoNamespace};
 
 namespace ${ctx.solutionName}.Application.Interfaces.Services
 {
@@ -87,7 +88,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.Extensions.Caching.Memory;
-using ${ctx.solutionName}.Application.DTOs.${plural};
+using ${ctx.solutionName}.Application.DTOs.${dtoNamespace}; // ✅ lowercase
 using ${ctx.solutionName}.Application.Interfaces.Services;
 using ${ctx.solutionName}.Application.Interfaces.Persistence; // ✅ CORRECT
 using ${ctx.solutionName}.Application.Services.Base;
@@ -111,6 +112,7 @@ namespace ${ctx.solutionName}.Application.Services
             _mapper = mapper;
         }
 
+        // ✅ پاک‌سازی کش‌ها (GetAll + optional GetById)
         private void InvalidateCache(Guid? id = null)
         {
             _cache.Remove(BuildCacheKey(nameof(GetAllAsync)));
@@ -130,7 +132,7 @@ namespace ${ctx.solutionName}.Application.Services
                 return cached;
 
             var entity = await _unitOfWork.${repoProperty}
-                .GetByIdAsync(id, cancellationToken: cancellationToken);
+                .GetByIdAsync(id, cancellationToken);
 
             if (entity == null)
                 return null;
@@ -151,7 +153,7 @@ namespace ${ctx.solutionName}.Application.Services
                 return cached;
 
             var entities = await _unitOfWork.${repoProperty}
-                .GetAllAsync(cancellationToken: cancellationToken);
+                .GetAllAsync(cancellationToken);
 
             var dtos = _mapper.Map<List<${entityName}Dto>>(entities);
             _cache.Set(cacheKey, dtos, _defaultCacheDuration);
@@ -183,13 +185,12 @@ namespace ${ctx.solutionName}.Application.Services
         )
         {
             var entity = await _unitOfWork.${repoProperty}
-                .GetByIdAsync(id, cancellationToken: cancellationToken);
+                .GetByIdAsync(id, cancellationToken);
 
             if (entity == null)
                 return null;
 
             _mapper.Map(dto, entity);
-
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             InvalidateCache(id);
@@ -203,12 +204,12 @@ namespace ${ctx.solutionName}.Application.Services
         )
         {
             var entity = await _unitOfWork.${repoProperty}
-                .GetByIdAsync(id, cancellationToken: cancellationToken);
+                .GetByIdAsync(id, cancellationToken);
 
             if (entity == null)
                 return false;
 
-            _unitOfWork.${repoProperty}.Remove(entity); // ✅ CONTRACT SAFE
+            _unitOfWork.${repoProperty}.Remove(entity);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             InvalidateCache(id);

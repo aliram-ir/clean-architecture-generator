@@ -7,6 +7,9 @@ import { CommandIds } from './commandIds';
 import { generateRepository } from '../generators/repository.generator';
 import { generateDtos } from '../generators/dto.generator';
 import { generateService } from '../generators/service.generator';
+import { generateBaseCacheService } from '../generators/baseCacheService.generator';
+import { generateAutoMapperProfile } from '../generators/automapper.generator';
+
 import { syncUnitOfWork } from '../generators/unitOfWork.sync';
 import { syncFluentConfigurations } from '../generators/fluentConfig.generator';
 import { syncDbContext } from '../generators/dbContext.sync';
@@ -14,11 +17,12 @@ import { syncDependencyInjection } from '../generators/dependencyInjection.sync'
 
 /*
 |--------------------------------------------------------------------------
-| Generate From Entity Command (Canonical)
+| Generate From Entity Command (CANONICAL – FINAL)
 |--------------------------------------------------------------------------
-| ✅ Whole‑stack Application sync from Entity
+| ✅ Complete Application Stack
+| ✅ Golden‑Sample Driven (za)
 | ✅ Idempotent
-| ✅ Entity‑Aware (UoW / Repo / Service / DTO)
+| ✅ No Missing Artifacts
 */
 
 export function registerGenerateFromEntityCommand(): vscode.Disposable {
@@ -33,8 +37,6 @@ export function registerGenerateFromEntityCommand(): vscode.Disposable {
 |--------------------------------------------------------------------------
 | Command Handler
 |--------------------------------------------------------------------------
-| ✅ Trigger: Right click on Entity (.cs)
-| ✅ FILE path passed to resolver
 */
 
 async function generateFromEntityCommand(uri: vscode.Uri) {
@@ -45,54 +47,43 @@ async function generateFromEntityCommand(uri: vscode.Uri) {
             return;
 
         const filePath = uri.fsPath;
+        const entity = path.basename(filePath, '.cs');
 
-        // ------------------------------
-        // ✅ Resolve Project Context
-        // ------------------------------
         const ctx = resolveProjectContext(filePath);
         if (!ctx) {
-            vscode.window.showErrorMessage(
-                '❌ Unable to resolve project context'
-            );
+            vscode.window.showErrorMessage('❌ Unable to resolve project context');
             return;
         }
 
-        // ------------------------------
-        // ✅ Entity Name
-        // ------------------------------
-        const entity = path.basename(filePath, '.cs');
-
         /*
         |--------------------------------------------------------------------------
-        | Canonical Generation Flow (Locked)
+        | Canonical Generation Flow (LOCKED)
         |--------------------------------------------------------------------------
-        | 1. Repository
-        | 2. UnitOfWork (Entity‑Aware)
-        | 3. DTOs (Case‑Safe)
-        | 4. Service
-        | 5. Fluent Config (Global Sync)
-        | 6. DbContext Sync
-        | 7. Dependency Injection
         */
 
         generateRepository(ctx, entity);
 
-        // ✅ Entity‑Aware UoW Sync (FIX)
         syncUnitOfWork(ctx, entity);
 
         generateDtos(ctx, entity, filePath);
+
+        // ✅ REQUIRED INFRA
+        generateBaseCacheService(ctx);
+
         generateService(ctx, entity);
+
+        // ✅ AutoMapper Profile (WAS MISSING)
+        generateAutoMapperProfile(ctx, entity);
 
         syncFluentConfigurations(ctx);
         syncDbContext(ctx, entity);
         syncDependencyInjection(ctx);
 
         vscode.window.showInformationMessage(
-            `✅ Entity '${entity}' synchronized successfully`
+            `✅ Entity '${entity}' fully synchronized`
         );
     }
     catch (error: any) {
-
         vscode.window.showErrorMessage(
             `❌ Generate failed: ${error?.message ?? error}`
         );
