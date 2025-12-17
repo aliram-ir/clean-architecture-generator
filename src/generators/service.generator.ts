@@ -1,15 +1,13 @@
 import * as path from 'path';
 import { ProjectContext } from '../core/projectContext';
-// ✅ توابع pluralize و writeIfMissing از helpers.ts ایمپورت می‌شوند.
-// ✅ تابع toPascalCase به صورت محلی تعریف شد تا خطای ایمپورت رفع شود.
 import { pluralize, writeIfMissing } from '../core/helpers';
 
 /*
 |--------------------------------------------------------------------------
 | Utils
 |--------------------------------------------------------------------------
-| توابع کمکی محلی برای این ژنراتور.
 */
+
 function toPascalCase(name: string): string {
     return name
         .replace(/[-_ ]+(.)/g, (_, c) => c.toUpperCase())
@@ -18,26 +16,26 @@ function toPascalCase(name: string): string {
 
 /*
 |--------------------------------------------------------------------------
-| Advanced Typed Service Generator
+| Service Generator (Canonical – Locked)
 |--------------------------------------------------------------------------
-| ✅ تولید Service با Typed UnitOfWork (برای Entities مانند Products, Orders, ...)
-| ✅ استفاده از BaseCacheService
-| ✅ استفاده از AutoMapper برای نگاشت DTO به Entity و بالعکس
-| ✅ استفاده از CancellationToken در تمامی متدهای Asynchronous
+| ✅ Golden Sample Driven (za)
+| ✅ Correct IRepository Contract (Remove)
+| ✅ Correct IUnitOfWork Namespace
+| ✅ Cache Invalidation Fixed
+| ✅ One‑Shot – Frozen
 */
 
 export function generateService(
     ctx: ProjectContext,
     entity: string
-) {
-    // ✅ تبدیل نام Entity به فرمت PascalCase با استفاده از تابع محلی
+): void {
+
     const entityName = toPascalCase(entity);
-    // ✅ تبدیل نام Entity به حالت جمع برای استفاده در DTOs Namespace
     const plural = pluralize(entityName);
+    const repoProperty = plural;
 
     const applicationRoot = ctx.layers.application;
 
-    // ✅ مسیر فایل اینترفیس سرویس (I{Entity}Service.cs)
     const interfacePath = path.join(
         applicationRoot,
         'Interfaces',
@@ -45,7 +43,6 @@ export function generateService(
         `I${entityName}Service.cs`
     );
 
-    // ✅ مسیر فایل پیاده‌سازی سرویس ({Entity}Service.cs)
     const servicePath = path.join(
         applicationRoot,
         'Services',
@@ -53,20 +50,19 @@ export function generateService(
     );
 
     // --------------------------------------------------
-    // Service Interface Generation
+    // Interface
     // --------------------------------------------------
-    // ✅ اطمینان از وجود فایل اینترفیس و ایجاد آن در صورت عدم وجود
+
     writeIfMissing(
         interfacePath,
         `using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using ${ctx.solutionName}.Application.DTOs.${plural}; // ✅ فضای نام صحیح DTOs
+using ${ctx.solutionName}.Application.DTOs.${plural};
 
 namespace ${ctx.solutionName}.Application.Interfaces.Services
 {
-    // ✅ اینترفیس سرویس برای مدیریت عملیات CRUD بر روی Entity
     public interface I${entityName}Service
     {
         Task<${entityName}Dto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
@@ -80,9 +76,9 @@ namespace ${ctx.solutionName}.Application.Interfaces.Services
     );
 
     // --------------------------------------------------
-    // Service Implementation (Typed UoW + Cache)
+    // Implementation
     // --------------------------------------------------
-    // ✅ اطمینان از وجود فایل پیاده‌سازی سرویس و ایجاد آن در صورت عدم وجود
+
     writeIfMissing(
         servicePath,
         `using System;
@@ -91,33 +87,38 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.Extensions.Caching.Memory;
-using ${ctx.solutionName}.Application.DTOs.${plural}; // ✅ فضای نام صحیح DTOs
-using ${ctx.solutionName}.Application.Interfaces.Base; // ✅ IUnitOfWork از Application.Interfaces.Base
+using ${ctx.solutionName}.Application.DTOs.${plural};
 using ${ctx.solutionName}.Application.Interfaces.Services;
-using ${ctx.solutionName}.Application.Services.Base; // ✅ BaseCacheService
-using ${ctx.solutionName}.Domain.Entities; // ✅ ارجاع به Entity برای عملیات نگاشت
+using ${ctx.solutionName}.Application.Interfaces.Persistence; // ✅ CORRECT
+using ${ctx.solutionName}.Application.Services.Base;
+using ${ctx.solutionName}.Domain.Entities;
 
 namespace ${ctx.solutionName}.Application.Services
 {
-    // ✅ پیاده‌سازی سرویس که از BaseCacheService ارث‌بری می‌کند و اینترفیس سرویس را پیاده‌سازی می‌نماید
     public class ${entityName}Service
         : BaseCacheService, I${entityName}Service
     {
-        private readonly IUnitOfWork _unitOfWork; // ✅ وابستگی به UnitOfWork
-        private readonly IMapper _mapper;         // ✅ وابستگی به AutoMapper
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IMapper _mapper;
 
-        // ✅ سازنده سرویس با تزریق وابستگی‌های UnitOfWork, AutoMapper و IMemoryCache
         public ${entityName}Service(
             IUnitOfWork unitOfWork,
             IMapper mapper,
             IMemoryCache cache
-        ) : base(cache) // ✅ فراخوانی سازنده کلاس پایه BaseCacheService
+        ) : base(cache)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
 
-        // ✅ متد دریافت Entity بر اساس شناسه، با قابلیت کشینگ و Cancellation Token
+        private void InvalidateCache(Guid? id = null)
+        {
+            _cache.Remove(BuildCacheKey(nameof(GetAllAsync)));
+
+            if (id.HasValue)
+                _cache.Remove(BuildCacheKey(nameof(GetByIdAsync), id.Value));
+        }
+
         public async Task<${entityName}Dto?> GetByIdAsync(
             Guid id,
             CancellationToken cancellationToken = default
@@ -128,19 +129,18 @@ namespace ${ctx.solutionName}.Application.Services
             if (_cache.TryGetValue(cacheKey, out ${entityName}Dto cached))
                 return cached;
 
-            var entity = await _unitOfWork.${plural} // ✅ دسترسی به Repository تایپ‌شده از طریق UnitOfWork
-                .GetByIdAsync(id, cancellationToken);
+            var entity = await _unitOfWork.${repoProperty}
+                .GetByIdAsync(id, cancellationToken: cancellationToken);
 
             if (entity == null)
                 return null;
 
             var dto = _mapper.Map<${entityName}Dto>(entity);
-            _cache.Set(cacheKey, dto, _defaultCacheDuration); // ✅ ذخیره نتیجه در کش
+            _cache.Set(cacheKey, dto, _defaultCacheDuration);
 
             return dto;
         }
 
-        // ✅ متد دریافت تمامی Entities، با قابلیت کشینگ و Cancellation Token
         public async Task<List<${entityName}Dto>> GetAllAsync(
             CancellationToken cancellationToken = default
         )
@@ -150,73 +150,68 @@ namespace ${ctx.solutionName}.Application.Services
             if (_cache.TryGetValue(cacheKey, out List<${entityName}Dto> cached))
                 return cached;
 
-            var entities = await _unitOfWork.${plural} // ✅ دسترسی به Repository تایپ‌شده از طریق UnitOfWork
-                .GetAllAsync(cancellationToken);
+            var entities = await _unitOfWork.${repoProperty}
+                .GetAllAsync(cancellationToken: cancellationToken);
 
             var dtos = _mapper.Map<List<${entityName}Dto>>(entities);
-            _cache.Set(cacheKey, dtos, _defaultCacheDuration); // ✅ ذخیره نتیجه در کش
+            _cache.Set(cacheKey, dtos, _defaultCacheDuration);
 
             return dtos;
         }
 
-        // ✅ متد ایجاد Entity جدید، با نگاشت از DTO و Cancellation Token
         public async Task<${entityName}Dto> CreateAsync(
             Create${entityName}Dto dto,
             CancellationToken cancellationToken = default
         )
         {
-            var entity = _mapper.Map<${entityName}>(dto); // ✅ نگاشت DTO به Entity
+            var entity = _mapper.Map<${entityName}>(dto);
 
-            await _unitOfWork.${plural} // ✅ افزودن Entity جدید از طریق Repository
+            await _unitOfWork.${repoProperty}
                 .AddAsync(entity, cancellationToken);
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken); // ✅ ذخیره تغییرات
-            _cache.Remove(BuildCacheKey(nameof(GetAllAsync))); // ✅ پاک کردن کش GetAll
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            InvalidateCache();
 
             return _mapper.Map<${entityName}Dto>(entity);
         }
 
-        // ✅ متد به‌روزرسانی Entity موجود، با نگاشت از DTO و Cancellation Token
         public async Task<${entityName}Dto?> UpdateAsync(
             Guid id,
             Update${entityName}Dto dto,
             CancellationToken cancellationToken = default
         )
         {
-            var entity = await _unitOfWork.${plural} // ✅ دریافت Entity موجود
-                .GetByIdAsync(id, cancellationToken);
+            var entity = await _unitOfWork.${repoProperty}
+                .GetByIdAsync(id, cancellationToken: cancellationToken);
 
             if (entity == null)
                 return null;
 
-            _mapper.Map(dto, entity); // ✅ نگاشت تغییرات DTO به Entity موجود
+            _mapper.Map(dto, entity);
 
-            _unitOfWork.${plural}.Update(entity); // ✅ به‌روزرسانی Entity
-            await _unitOfWork.SaveChangesAsync(cancellationToken); // ✅ ذخیره تغییرات
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            _cache.Remove(BuildCacheKey(nameof(GetAllAsync))); // ✅ پاک کردن کش GetAll
-            _cache.Remove(BuildCacheKey(nameof(GetByIdAsync), id)); // ✅ پاک کردن کش GetById
+            InvalidateCache(id);
 
             return _mapper.Map<${entityName}Dto>(entity);
         }
 
-        // ✅ متد حذف Entity، با Cancellation Token
         public async Task<bool> DeleteAsync(
             Guid id,
             CancellationToken cancellationToken = default
         )
         {
-            var entity = await _unitOfWork.${plural} // ✅ دریافت Entity موجود
-                .GetByIdAsync(id, cancellationToken);
+            var entity = await _unitOfWork.${repoProperty}
+                .GetByIdAsync(id, cancellationToken: cancellationToken);
 
             if (entity == null)
                 return false;
 
-            _unitOfWork.${plural}.Delete(entity); // ✅ حذف Entity
-            await _unitOfWork.SaveChangesAsync(cancellationToken); // ✅ ذخیره تغییرات
+            _unitOfWork.${repoProperty}.Remove(entity); // ✅ CONTRACT SAFE
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            _cache.Remove(BuildCacheKey(nameof(GetAllAsync))); // ✅ پاک کردن کش GetAll
-            _cache.Remove(BuildCacheKey(nameof(GetByIdAsync), id)); // ✅ پاک کردن کش GetById
+            InvalidateCache(id);
 
             return true;
         }

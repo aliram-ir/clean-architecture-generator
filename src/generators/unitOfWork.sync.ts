@@ -4,117 +4,123 @@ import { ProjectContext } from '../core/projectContext';
 
 /*
 |--------------------------------------------------------------------------
-| Canonical UnitOfWork Generator
+| Canonical UnitOfWork Sync (Entity‑Aware)
 |--------------------------------------------------------------------------
-| ✅ Global UoW
+| ✅ Typed Repositories
 | ✅ Transactional
-| ✅ Single Source
+| ✅ SaveChangesAsync
+| ✅ Lazy Init
+| ✅ Non‑destructive
 | ✅ ctx.layers only
 */
 
 export function syncUnitOfWork(
-    ctx: ProjectContext
+    ctx: ProjectContext,
+    entity: string
 ): void {
-
-    const appPath = ctx.layers.application;
-    const infraPath = ctx.layers.infrastructure;
-
-    if (!appPath || !infraPath) {
-        throw new Error('Application or Infrastructure layer not found');
-    }
-
-    generateApplicationInterface(ctx, appPath);
-    generateInfrastructureImplementation(ctx, infraPath);
+    syncApplicationInterface(ctx, entity);
+    syncInfrastructureImplementation(ctx, entity);
 }
 
 /*
 |--------------------------------------------------------------------------
-| Application Layer – Interface
+| Application Layer – IUnitOfWork
 |--------------------------------------------------------------------------
 */
 
-function generateApplicationInterface(
+function syncApplicationInterface(
     ctx: ProjectContext,
-    applicationPath: string
+    entity: string
 ): void {
 
-    const interfacesPath = path.join(
-        applicationPath,
-        'Interfaces',
-        'Persistence'
-    );
-
     const filePath = path.join(
-        interfacesPath,
+        ctx.layers.application,
+        'Interfaces',
+        'Persistence',
         'IUnitOfWork.cs'
     );
 
-    if (fs.existsSync(filePath))
-        return;
+    let content: string;
 
-    fs.mkdirSync(interfacesPath, { recursive: true });
+    // ✅ Create if missing
+    if (!fs.existsSync(filePath)) {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
-    const content = `using System;
+        content = `using System;
 using System.Threading;
 using System.Threading.Tasks;
+using ${ctx.solutionName}.Application.Interfaces.Repositories;
 
 namespace ${ctx.solutionName}.Application.Interfaces.Persistence
 {
     /// <summary>
-    /// Contract اصلی UnitOfWork
+    /// Contract اصلی UnitOfWork (Canonical)
     /// </summary>
     public interface IUnitOfWork : IDisposable
     {
-        Task BeginTransactionAsync(
-            CancellationToken cancellationToken = default
-        );
+        // ✅ Repositories
+        I${entity}Repository ${entity}s { get; }
 
-        Task CommitAsync(
-            CancellationToken cancellationToken = default
-        );
+        // ✅ Transactions
+        Task BeginTransactionAsync(CancellationToken cancellationToken = default);
+        Task CommitAsync(CancellationToken cancellationToken = default);
+        Task RollbackAsync(CancellationToken cancellationToken = default);
 
-        Task RollbackAsync(
-            CancellationToken cancellationToken = default
-        );
+        // ✅ Required by Services
+        Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }
 `;
+        fs.writeFileSync(filePath, content, 'utf8');
+        return;
+    }
 
-    fs.writeFileSync(filePath, content, 'utf8');
+    content = fs.readFileSync(filePath, 'utf8');
+
+    const repoLine = `        I${entity}Repository ${entity}s { get; }\n`;
+
+    if (!content.includes(repoLine)) {
+        content = content.replace(
+            '}',
+            `${repoLine}
+    }\n`
+        );
+
+        fs.writeFileSync(filePath, content, 'utf8');
+    }
 }
 
 /*
 |--------------------------------------------------------------------------
-| Infrastructure Layer – Implementation
+| Infrastructure Layer – UnitOfWork
 |--------------------------------------------------------------------------
 */
 
-function generateInfrastructureImplementation(
+function syncInfrastructureImplementation(
     ctx: ProjectContext,
-    infrastructurePath: string
+    entity: string
 ): void {
 
-    const persistencePath = path.join(
-        infrastructurePath,
-        'Persistence'
-    );
-
     const filePath = path.join(
-        persistencePath,
+        ctx.layers.infrastructure,
+        'Persistence',
         'UnitOfWork.cs'
     );
 
-    if (fs.existsSync(filePath))
-        return;
+    let content: string;
 
-    fs.mkdirSync(persistencePath, { recursive: true });
+    // ✅ Create if missing
+    if (!fs.existsSync(filePath)) {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
-    const content = `using System;
+        content = `using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
 using ${ctx.solutionName}.Application.Interfaces.Persistence;
+using ${ctx.solutionName}.Application.Interfaces.Repositories;
 using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
+using ${ctx.solutionName}.Infrastructure.Repositories;
 
 namespace ${ctx.solutionName}.Infrastructure.Persistence
 {
@@ -126,10 +132,17 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence
         private readonly ApplicationDbContext _dbContext;
         private IDbContextTransaction? _transaction;
 
+        private ${entity}Repository? _${entity.toLowerCase()}s;
+
         public UnitOfWork(ApplicationDbContext dbContext)
         {
             _dbContext = dbContext;
         }
+
+        // ✅ Typed Repository
+        public I${entity}Repository ${entity}s =>
+            _${entity.toLowerCase()}s ??=
+                new ${entity}Repository(_dbContext);
 
         public async Task BeginTransactionAsync(
             CancellationToken cancellationToken = default
@@ -151,9 +164,7 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
                 if (_transaction != null)
-                {
                     await _transaction.CommitAsync(cancellationToken);
-                }
             }
             catch
             {
@@ -171,11 +182,16 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence
         )
         {
             if (_transaction != null)
-            {
                 await _transaction.RollbackAsync(cancellationToken);
-            }
 
             DisposeTransaction();
+        }
+
+        public Task<int> SaveChangesAsync(
+            CancellationToken cancellationToken = default
+        )
+        {
+            return _dbContext.SaveChangesAsync(cancellationToken);
         }
 
         private void DisposeTransaction()
@@ -192,6 +208,34 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence
     }
 }
 `;
+        fs.writeFileSync(filePath, content, 'utf8');
+        return;
+    }
+
+    content = fs.readFileSync(filePath, 'utf8');
+
+    // ✅ Inject private field
+    if (!content.includes(`_${entity.toLowerCase()}s`)) {
+        content = content.replace(
+            'public sealed class UnitOfWork : IUnitOfWork',
+            `public sealed class UnitOfWork : IUnitOfWork
+    {
+        private ${entity}Repository? _${entity.toLowerCase()}s;
+`
+        );
+    }
+
+    // ✅ Inject property
+    if (!content.includes(`I${entity}Repository ${entity}s`)) {
+        content = content.replace(
+            'public async Task BeginTransactionAsync',
+            `public I${entity}Repository ${entity}s =>
+            _${entity.toLowerCase()}s ??=
+                new ${entity}Repository(_dbContext);
+
+        public async Task BeginTransactionAsync`
+        );
+    }
 
     fs.writeFileSync(filePath, content, 'utf8');
 }

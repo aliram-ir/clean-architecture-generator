@@ -2,41 +2,25 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ProjectContext } from '../core/projectContext';
 
-/*
-|--------------------------------------------------------------------------
-| BaseCacheService Generator (Canonical)
-|--------------------------------------------------------------------------
-| ✅ Abstract
-| ✅ IMemoryCache
-| ✅ Application Layer
-| ✅ Uses ctx.layers.application
-*/
-
 export function generateBaseCacheService(
     ctx: ProjectContext
 ): void {
 
-    const applicationPath = ctx.layers.application;
-    if (!applicationPath) {
-        throw new Error('Application layer not found');
-    }
-
-    const servicesPath = path.join(
-        applicationPath,
+    const servicesBasePath = path.join(
+        ctx.layers.application,
         'Services',
         'Base'
     );
 
     const filePath = path.join(
-        servicesPath,
+        servicesBasePath,
         'BaseCacheService.cs'
     );
 
-    // ✅ Non-destructive generation
     if (fs.existsSync(filePath))
         return;
 
-    fs.mkdirSync(servicesPath, { recursive: true });
+    fs.mkdirSync(servicesBasePath, { recursive: true });
 
     const content = `using System;
 using Microsoft.Extensions.Caching.Memory;
@@ -44,41 +28,35 @@ using Microsoft.Extensions.Caching.Memory;
 namespace ${ctx.solutionName}.Application.Services.Base
 {
     /// <summary>
-    /// کلاس پایه برای سرویس‌های دارای Cache
+    /// Base class for cached application services
     /// </summary>
     public abstract class BaseCacheService
     {
-        protected readonly IMemoryCache Cache;
+        protected readonly IMemoryCache _cache;
+
+        // ✅ Default cache duration (5 minutes)
+        protected readonly TimeSpan _defaultCacheDuration =
+            TimeSpan.FromMinutes(5);
 
         protected BaseCacheService(IMemoryCache cache)
         {
-            Cache = cache;
+            _cache = cache;
         }
 
-        /// <summary>
-        /// دریافت داده از Cache یا ساخت آن
-        /// </summary>
-        protected T GetOrCreate<T>(
-            string key,
-            Func<T> factory,
-            int minutes = 5
+        protected string BuildCacheKey(
+            string methodName,
+            params object[] parameters
         )
         {
-            return Cache.GetOrCreate(key, entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow =
-                    TimeSpan.FromMinutes(minutes);
-
-                return factory();
-            })!;
+            return $"{GetType().Name}:{methodName}:{string.Join(":", parameters)}";
         }
 
-        /// <summary>
-        /// حذف یک کلید از Cache
-        /// </summary>
-        protected void Remove(string key)
+        protected void InvalidateCache(
+            string methodName,
+            params object[] parameters
+        )
         {
-            Cache.Remove(key);
+            _cache.Remove(BuildCacheKey(methodName, parameters));
         }
     }
 }

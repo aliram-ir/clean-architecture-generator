@@ -10,12 +10,13 @@ import {
 
 /*
 |--------------------------------------------------------------------------
-| Dependency Injection Sync (Canonical)
+| Dependency Injection Sync (Canonical – Locked)
 |--------------------------------------------------------------------------
-| ✅ Scan واقعی
-| ✅ Global registrations
-| ✅ Idempotent
-| ✅ ctx.layers only
+| ✅ Interface‑driven
+| ✅ Fail‑safe
+| ✅ Deterministic
+| ✅ Overwrite by design
+| ✅ NO blind registrations
 */
 
 export function syncDependencyInjection(
@@ -27,7 +28,7 @@ export function syncDependencyInjection(
     const diPath = ctx.layers.di;
 
     if (!applicationPath || !infrastructurePath || !diPath) {
-        throw new Error('Missing required layers for DI');
+        throw new Error('DI Sync failed: Missing required layers');
     }
 
     const extensionsPath = path.join(diPath, 'Extensions');
@@ -38,7 +39,10 @@ export function syncDependencyInjection(
 
     fs.mkdirSync(extensionsPath, { recursive: true });
 
-    // ✅ Pure FS scans
+    // ----------------------------------------------------------
+    // ✅ Pure filesystem scans (SSOT)
+    // ----------------------------------------------------------
+
     const services = scanApplicationServices(applicationPath);
     const serviceInterfaces = scanApplicationServiceInterfaces(applicationPath);
     const repositories = scanInfrastructureRepositories(infrastructurePath);
@@ -56,7 +60,8 @@ export function syncDependencyInjection(
             i => i.name === `I${svc.name}`
         );
 
-        if (!iface) continue;
+        if (!iface)
+            continue;
 
         registrations.push(
             `services.AddScoped<${iface.namespace}.${iface.name}, ${svc.namespace}.${svc.name}>();`
@@ -65,28 +70,57 @@ export function syncDependencyInjection(
 
     /*
     |--------------------------------------------------------------------------
-    | Infrastructure Repositories
+    | Infrastructure Repositories (STRICT)
+    |--------------------------------------------------------------------------
+    | ✅ Only if matching Application Interface exists
+    | ✅ Excludes Base Repository
     |--------------------------------------------------------------------------
     */
+    const repoInterfacesPath = path.join(
+        applicationPath,
+        'Interfaces',
+        'Repositories'
+    );
+
+    const repoInterfaceFiles = fs.existsSync(repoInterfacesPath)
+        ? fs.readdirSync(repoInterfacesPath)
+            .filter(f => f.endsWith('.cs'))
+            .map(f => path.basename(f, '.cs'))
+        : [];
+
     for (const repo of repositories) {
 
-        const ifaceName = `I${repo.name}`;
+        // ❌ Base repository must never be registered
+        if (repo.name === 'Repository')
+            continue;
+
+        // UserRepository → IUserRepository
+        const expectedInterfaceName =
+            `I${repo.name.replace('Repository', '')}Repository`;
+
+        if (!repoInterfaceFiles.includes(expectedInterfaceName))
+            continue; // ✅ FAIL‑SAFE
+
         const ifaceNamespace =
             `${ctx.solutionName}.Application.Interfaces.Repositories`;
 
         registrations.push(
-            `services.AddScoped<${ifaceNamespace}.${ifaceName}, ${repo.namespace}.${repo.name}>();`
+            `services.AddScoped<${ifaceNamespace}.${expectedInterfaceName}, ${repo.namespace}.${repo.name}>();`
         );
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Core Infrastructure
+    | Unit Of Work (Single Source)
     |--------------------------------------------------------------------------
     */
     registrations.push(
         `services.AddScoped<${ctx.solutionName}.Application.Interfaces.Persistence.IUnitOfWork, ${ctx.solutionName}.Infrastructure.Persistence.UnitOfWork>();`
     );
+
+    // ----------------------------------------------------------
+    // ✅ Deterministic Composition Root
+    // ----------------------------------------------------------
 
     const content = `using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
@@ -97,7 +131,7 @@ using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
 namespace ${ctx.solutionName}.DI.Extensions
 {
     /// <summary>
-    /// رجیستریشن Canonical سرویس‌ها
+    /// Canonical DI Composition Root
     /// </summary>
     public static class ServiceCollectionExtensions
     {

@@ -18,7 +18,7 @@ import { syncDependencyInjection } from '../generators/dependencyInjection.sync'
 |--------------------------------------------------------------------------
 | ✅ Whole‑stack Application sync from Entity
 | ✅ Idempotent
-| ✅ Context‑only architecture
+| ✅ Entity‑Aware (UoW / Repo / Service / DTO)
 */
 
 export function registerGenerateFromEntityCommand(): vscode.Disposable {
@@ -64,11 +64,11 @@ async function generateFromEntityCommand(uri: vscode.Uri) {
 
         /*
         |--------------------------------------------------------------------------
-        | Canonical Generation Flow
+        | Canonical Generation Flow (Locked)
         |--------------------------------------------------------------------------
         | 1. Repository
-        | 2. UnitOfWork (Global / Once)
-        | 3. DTOs
+        | 2. UnitOfWork (Entity‑Aware)
+        | 3. DTOs (Case‑Safe)
         | 4. Service
         | 5. Fluent Config (Global Sync)
         | 6. DbContext Sync
@@ -77,19 +77,14 @@ async function generateFromEntityCommand(uri: vscode.Uri) {
 
         generateRepository(ctx, entity);
 
-        // ✅ Non‑Entity based (Canonical)
-        syncUnitOfWork(ctx);
+        // ✅ Entity‑Aware UoW Sync (FIX)
+        syncUnitOfWork(ctx, entity);
 
         generateDtos(ctx, entity, filePath);
         generateService(ctx, entity);
 
-        // ✅ Global Fluent Config sync
         syncFluentConfigurations(ctx);
-
-        // ✅ DbContext safety sync
         syncDbContext(ctx, entity);
-
-        // ✅ DI final sync
         syncDependencyInjection(ctx);
 
         vscode.window.showInformationMessage(

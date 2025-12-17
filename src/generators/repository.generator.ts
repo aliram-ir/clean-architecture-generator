@@ -5,11 +5,13 @@ import { writeIfMissing } from '../core/helpers';
 
 /*
 |--------------------------------------------------------------------------
-| Repository Generator
+| Repository Generator (Final Canonical)
 |--------------------------------------------------------------------------
-| ✅ Clean Architecture compliant (Application.Interfaces.Repositories)
-| ✅ Advanced IRepository with Paging/Includes/Filtering
-| ✅ Idempotent
+| ✅ Application owns Contracts
+| ✅ Infrastructure owns Implementations
+| ✅ IRepository signature == za Golden Sample
+| ✅ Idempotent / Non‑destructive
+| ✅ ctx.layers only
 */
 
 export function generateRepository(
@@ -21,49 +23,55 @@ export function generateRepository(
     // Paths
     // ------------------------------------------------------------
 
-    // Application Layer Interface Paths
-    const appBaseInterfacePath = path.join(
+    const appRepositoriesBasePath = path.join(
         ctx.layers.application,
         'Interfaces',
-        'Repositories', // Corrected: Should be Repositories, not Persistence
+        'Repositories',
         'Base'
     );
 
-    const appEntityInterfacePath = path.join(
+    const appRepositoriesPath = path.join(
         ctx.layers.application,
         'Interfaces',
-        'Repositories' // Corrected: Should be Repositories, not Persistence
+        'Repositories'
     );
 
-    // Infrastructure Layer Implementation Paths
-    const infraBaseImplementationPath = path.join(
+    const infraRepositoriesBasePath = path.join(
         ctx.layers.infrastructure,
         'Repositories',
         'Base'
     );
 
-    const infraEntityImplementationPath = path.join(
+    const infraRepositoriesPath = path.join(
         ctx.layers.infrastructure,
         'Repositories'
     );
 
     // ------------------------------------------------------------
-    // Ensure Directories Exist
+    // Ensure directories
     // ------------------------------------------------------------
-    fs.mkdirSync(appBaseInterfacePath, { recursive: true });
-    fs.mkdirSync(appEntityInterfacePath, { recursive: true });
-    fs.mkdirSync(infraBaseImplementationPath, { recursive: true });
-    fs.mkdirSync(infraEntityImplementationPath, { recursive: true });
+
+    fs.mkdirSync(appRepositoriesBasePath, { recursive: true });
+    fs.mkdirSync(appRepositoriesPath, { recursive: true });
+    fs.mkdirSync(infraRepositoriesBasePath, { recursive: true });
+    fs.mkdirSync(infraRepositoriesPath, { recursive: true });
 
     // ------------------------------------------------------------
-    // 1. IRepository<T> Interface – Application Layer (Base)
+    // 1. IRepository<T> – Application (Base Contract)
     // ------------------------------------------------------------
+
     writeIfMissing(
-        path.join(appBaseInterfacePath, 'IRepository.cs'),
-        `using System.Linq.Expressions;
-// Correct namespace for base Repository interface
+        path.join(appRepositoriesBasePath, 'IRepository.cs'),
+        `using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Threading;
+using System.Threading.Tasks;
+
 namespace ${ctx.solutionName}.Application.Interfaces.Repositories.Base
 {
+    // ✅ Generic Repository Contract (Canonical)
     public interface IRepository<T> where T : class
     {
         Task<T?> GetByIdAsync(
@@ -127,42 +135,49 @@ namespace ${ctx.solutionName}.Application.Interfaces.Repositories.Base
             bool disableTracking = true,
             CancellationToken cancellationToken = default);
     }
-}`
+}
+`
     );
 
     // ------------------------------------------------------------
-    // 2. I{Entity}Repository Interface – Application Layer (Specific)
+    // 2. I{Entity}Repository – Application (Specific Contract)
     // ------------------------------------------------------------
+
     writeIfMissing(
-        path.join(appEntityInterfacePath, `I${entity}Repository.cs`),
+        path.join(appRepositoriesPath, `I${entity}Repository.cs`),
         `using ${ctx.solutionName}.Domain.Entities;
-// Using correct namespace for base Repository interface
 using ${ctx.solutionName}.Application.Interfaces.Repositories.Base;
 
-// Correct namespace for specific Entity Repository interface
 namespace ${ctx.solutionName}.Application.Interfaces.Repositories
 {
+    // ✅ Repository Contract for ${entity}
     public interface I${entity}Repository : IRepository<${entity}>
     {
-        // You can add Entity-specific methods here
+        // ✅ Entity‑specific queries go here
     }
-}`
+}
+`
     );
 
     // ------------------------------------------------------------
-    // 3. Repository<T> Class – Infrastructure Layer (Base)
+    // 3. Repository<T> – Infrastructure (Base Implementation)
     // ------------------------------------------------------------
+
     writeIfMissing(
-        path.join(infraBaseImplementationPath, 'Repository.cs'),
-        `// Using correct namespace for base Repository interface from Application layer
+        path.join(infraRepositoriesBasePath, 'Repository.cs'),
+        `using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using ${ctx.solutionName}.Application.Interfaces.Repositories.Base;
 using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
-using Microsoft.EntityFrameworkCore;
-using System.Linq.Expressions;
 
-// Correct namespace for base Repository implementation in Infrastructure layer
 namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
 {
+    // ✅ EF Core Generic Repository
     public class Repository<T> : IRepository<T> where T : class
     {
         protected readonly ApplicationDbContext _context;
@@ -174,7 +189,7 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             _dbSet = context.Set<T>();
         }
 
-        private IQueryable<T> ApplyIncludesAndTracking(
+        protected IQueryable<T> ApplyIncludesAndTracking(
             IQueryable<T> query,
             Func<IQueryable<T>, IQueryable<T>>? include,
             bool disableTracking)
@@ -198,7 +213,7 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             if (include != null)
                 query = include(query);
 
-            // Assumes all Entities have an Id property of type Guid
+            // ✅ فرض: تمام Entityها دارای Id از نوع Guid هستند
             return await query.FirstOrDefaultAsync(
                 e => EF.Property<Guid>(e, "Id") == id,
                 cancellationToken);
@@ -234,7 +249,11 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             bool disableTracking = true,
             CancellationToken cancellationToken = default)
         {
-            var query = ApplyIncludesAndTracking(_dbSet.Where(predicate), include, disableTracking);
+            var query = ApplyIncludesAndTracking(
+                _dbSet.Where(predicate),
+                include,
+                disableTracking);
+
             return await query.ToListAsync(cancellationToken);
         }
 
@@ -244,7 +263,11 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             bool disableTracking = true,
             CancellationToken cancellationToken = default)
         {
-            var query = ApplyIncludesAndTracking(_dbSet.Where(predicate), include, disableTracking);
+            var query = ApplyIncludesAndTracking(
+                _dbSet.Where(predicate),
+                include,
+                disableTracking);
+
             return await query.FirstOrDefaultAsync(cancellationToken);
         }
 
@@ -254,7 +277,11 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             bool disableTracking = true,
             CancellationToken cancellationToken = default)
         {
-            var query = ApplyIncludesAndTracking(_dbSet.Where(predicate), include, disableTracking);
+            var query = ApplyIncludesAndTracking(
+                _dbSet.Where(predicate),
+                include,
+                disableTracking);
+
             return await query.SingleOrDefaultAsync(cancellationToken);
         }
 
@@ -280,7 +307,9 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             return entity;
         }
 
-        public async Task AddRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
+        public async Task AddRangeAsync(
+            IEnumerable<T> entities,
+            CancellationToken cancellationToken = default)
         {
             await _dbSet.AddRangeAsync(entities, cancellationToken);
         }
@@ -311,7 +340,9 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             var totalCount = await query.CountAsync(cancellationToken);
 
             if (orderBy != null)
-                query = ascending ? query.OrderBy(orderBy) : query.OrderByDescending(orderBy);
+                query = ascending
+                    ? query.OrderBy(orderBy)
+                    : query.OrderByDescending(orderBy);
 
             var items = await query
                 .Skip((pageNumber - 1) * pageSize)
@@ -321,23 +352,24 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories.Base
             return (items, totalCount);
         }
     }
-}`
+}
+`
     );
 
     // ------------------------------------------------------------
-    // 4. {Entity}Repository Class – Infrastructure Layer (Specific)
+    // 4. {Entity}Repository – Infrastructure (Specific)
     // ------------------------------------------------------------
+
     writeIfMissing(
-        path.join(infraEntityImplementationPath, `${entity}Repository.cs`),
+        path.join(infraRepositoriesPath, `${entity}Repository.cs`),
         `using ${ctx.solutionName}.Domain.Entities;
-// Using correct namespace for specific Entity Repository interface from Application layer
 using ${ctx.solutionName}.Application.Interfaces.Repositories;
 using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
 using ${ctx.solutionName}.Infrastructure.Repositories.Base;
 
-// Correct namespace for specific Entity Repository implementation in Infrastructure layer
 namespace ${ctx.solutionName}.Infrastructure.Repositories
 {
+    // ✅ Repository Implementation for ${entity}
     public sealed class ${entity}Repository
         : Repository<${entity}>, I${entity}Repository
     {
@@ -346,6 +378,7 @@ namespace ${ctx.solutionName}.Infrastructure.Repositories
         {
         }
     }
-}`
+}
+`
     );
 }
