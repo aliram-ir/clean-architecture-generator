@@ -1,226 +1,140 @@
 import * as fs from 'fs';
 import * as path from 'path';
+
 import { ProjectContext } from '../core/projectContext';
-import { writeIfMissing } from '../core/helpers';
+import {
+    scanApplicationServices,
+    scanApplicationServiceInterfaces,
+    scanInfrastructureRepositories
+} from '../core/projectScanner';
 
 /*
 |--------------------------------------------------------------------------
-| Dependency Injection Sync (Canonical – FINAL)
+| Dependency Injection Sync (Canonical)
 |--------------------------------------------------------------------------
-| ✅ DI file always exists
-| ✅ AutoMapper Application-level scan
-| ✅ IUnitOfWork → Application.Interfaces.Base
-| ✅ UnitOfWork → Infrastructure.Repositories.Base
-| ✅ Repositories → Application.Interfaces.Repositories
-| ✅ Services → Application.Interfaces.Services
-| ✅ Fully Idempotent
+| ✅ Scan واقعی
+| ✅ Global registrations
+| ✅ Idempotent
+| ✅ ctx.layers only
 */
 
-export function syncDependencyInjection(ctx: ProjectContext) {
+export function syncDependencyInjection(
+    ctx: ProjectContext
+): void {
 
-    const diRoot = ctx.layers.di;
-    if (!diRoot) return;
+    const applicationPath = ctx.layers.application;
+    const infrastructurePath = ctx.layers.infrastructure;
+    const diPath = ctx.layers.di;
 
-    const extensionsDir = path.join(diRoot, 'Extensions');
-    const diFilePath = path.join(
-        extensionsDir,
+    if (!applicationPath || !infrastructurePath || !diPath) {
+        throw new Error('Missing required layers for DI');
+    }
+
+    const extensionsPath = path.join(diPath, 'Extensions');
+    const filePath = path.join(
+        extensionsPath,
         'ServiceCollectionExtensions.cs'
     );
 
-    fs.mkdirSync(extensionsDir, { recursive: true });
+    fs.mkdirSync(extensionsPath, { recursive: true });
 
-    writeIfMissing(diFilePath, diTemplate(ctx));
+    // ✅ Pure FS scans
+    const services = scanApplicationServices(applicationPath);
+    const serviceInterfaces = scanApplicationServiceInterfaces(applicationPath);
+    const repositories = scanInfrastructureRepositories(infrastructurePath);
 
-    let content = fs.readFileSync(diFilePath, 'utf8');
+    const registrations: string[] = [];
 
-    content = syncAutoMapper(ctx, content);
-    content = syncUnitOfWork(content);
-    content = syncRepositories(ctx, content);
-    content = syncServices(ctx, content);
+    /*
+    |--------------------------------------------------------------------------
+    | Application Services
+    |--------------------------------------------------------------------------
+    */
+    for (const svc of services) {
 
-    fs.writeFileSync(diFilePath, content, 'utf8');
-}
+        const iface = serviceInterfaces.find(
+            i => i.name === `I${svc.name}`
+        );
 
-/*
-|--------------------------------------------------------------------------
-| AutoMapper – Application Assembly Scan
-|--------------------------------------------------------------------------
-*/
+        if (!iface) continue;
 
-function syncAutoMapper(ctx: ProjectContext, content: string) {
-
-    if (content.includes('AddAutoMapper')) {
-        return content;
-    }
-
-    const registration =
-        `            services.AddAutoMapper(
-                typeof(${ctx.solutionName}.Application.Mappings.${ctx.solutionName}AutoMapperAnchor).Assembly
-            );`;
-
-    return insertOnce(
-        content,
-        '// === AutoMapper ===',
-        registration
-    );
-}
-
-/*
-|--------------------------------------------------------------------------
-| UnitOfWork
-|--------------------------------------------------------------------------
-*/
-
-function syncUnitOfWork(content: string) {
-
-    const registration =
-        `            services.AddScoped<IUnitOfWork, UnitOfWork>();`;
-
-    return insertOnce(
-        content,
-        '// === UnitOfWork ===',
-        registration
-    );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Repositories (Typed)
-|--------------------------------------------------------------------------
-*/
-
-function syncRepositories(ctx: ProjectContext, content: string) {
-
-    const repoInterfacesDir = path.join(
-        ctx.layers.application,
-        'Interfaces',
-        'Repositories'
-    );
-
-    const repoImplDir = path.join(
-        ctx.layers.infrastructure,
-        'Repositories'
-    );
-
-    if (!fs.existsSync(repoInterfacesDir) || !fs.existsSync(repoImplDir)) {
-        return content;
-    }
-
-    const interfaces = fs.readdirSync(repoInterfacesDir)
-        .filter(f => f.startsWith('I') && f.endsWith('Repository.cs'));
-
-    for (const file of interfaces) {
-
-        const iface = file.replace('.cs', '');
-        const impl = iface.replace(/^I/, '');
-
-        const registration =
-            `            services.AddScoped<${iface}, ${impl}>();`;
-
-        content = insertOnce(
-            content,
-            '// === Repositories ===',
-            registration
+        registrations.push(
+            `services.AddScoped<${iface.namespace}.${iface.name}, ${svc.namespace}.${svc.name}>();`
         );
     }
 
-    return content;
-}
+    /*
+    |--------------------------------------------------------------------------
+    | Infrastructure Repositories
+    |--------------------------------------------------------------------------
+    */
+    for (const repo of repositories) {
 
-/*
-|--------------------------------------------------------------------------
-| Application Services
-|--------------------------------------------------------------------------
-*/
+        const ifaceName = `I${repo.name}`;
+        const ifaceNamespace =
+            `${ctx.solutionName}.Application.Interfaces.Repositories`;
 
-function syncServices(ctx: ProjectContext, content: string) {
-
-    const servicesDir = path.join(
-        ctx.layers.application,
-        'Services'
-    );
-
-    if (!fs.existsSync(servicesDir)) {
-        return content;
-    }
-
-    const services = fs.readdirSync(servicesDir)
-        .filter(f => f.endsWith('Service.cs') && !f.startsWith('Base'));
-
-    for (const file of services) {
-
-        const service = file.replace('.cs', '');
-        const iface = `I${service}`;
-
-        const registration =
-            `            services.AddScoped<${iface}, ${service}>();`;
-
-        content = insertOnce(
-            content,
-            '// === Application Services ===',
-            registration
+        registrations.push(
+            `services.AddScoped<${ifaceNamespace}.${ifaceName}, ${repo.namespace}.${repo.name}>();`
         );
     }
 
-    return content;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Helpers
-|--------------------------------------------------------------------------
-*/
-
-function insertOnce(
-    content: string,
-    marker: string,
-    line: string
-): string {
-
-    if (content.includes(line)) {
-        return content;
-    }
-
-    return content.replace(
-        marker,
-        `${marker}\n${line}`
+    /*
+    |--------------------------------------------------------------------------
+    | Core Infrastructure
+    |--------------------------------------------------------------------------
+    */
+    registrations.push(
+        `services.AddScoped<${ctx.solutionName}.Application.Interfaces.Persistence.IUnitOfWork, ${ctx.solutionName}.Infrastructure.Persistence.UnitOfWork>();`
     );
-}
 
-/*
-|--------------------------------------------------------------------------
-| DI File Template
-|--------------------------------------------------------------------------
-*/
+    const content = `using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
 
-function diTemplate(ctx: ProjectContext): string {
-
-    return `using Microsoft.Extensions.DependencyInjection;
-using ${ctx.solutionName}.Application.Interfaces.Base;
-using ${ctx.solutionName}.Application.Interfaces.Repositories;
-using ${ctx.solutionName}.Application.Interfaces.Services;
-using ${ctx.solutionName}.Infrastructure.Repositories.Base;
-using ${ctx.solutionName}.Infrastructure.Repositories;
+using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
 
 namespace ${ctx.solutionName}.DI.Extensions
 {
+    /// <summary>
+    /// رجیستریشن Canonical سرویس‌ها
+    /// </summary>
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddProjectServices(
-            this IServiceCollection services
+        public static IServiceCollection AddApplicationServices(
+            this IServiceCollection services,
+            IConfiguration configuration
         )
         {
-            // === AutoMapper ===
+            // ------------------------------
+            // DbContext
+            // ------------------------------
+            services.AddDbContext<ApplicationDbContext>(options =>
+                options.UseSqlServer(
+                    configuration.GetConnectionString("DefaultConnection")
+                )
+            );
 
-            // === UnitOfWork ===
+            // ------------------------------
+            // Memory Cache
+            // ------------------------------
+            services.AddMemoryCache();
 
-            // === Repositories ===
+            // ------------------------------
+            // Services & Repositories
+            // ------------------------------
+${registrations.map(r => `            ${r}`).join('\n')}
 
-            // === Application Services ===
+            // ------------------------------
+            // AutoMapper
+            // ------------------------------
+            services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 
             return services;
         }
     }
 }
 `;
+
+    fs.writeFileSync(filePath, content, 'utf8');
 }

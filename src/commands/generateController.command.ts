@@ -3,20 +3,21 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 import { resolveProjectContext } from '../core/resolver';
-import { detectApiProject } from '../core/layerDetector';
 import { pluralize, writeIfMissing } from '../core/helpers';
+import { CommandIds } from './commandIds';
 
 /*
 |--------------------------------------------------------------------------
-| Command Registration
+| Command Registration (Canonical)
 |--------------------------------------------------------------------------
-| Only responsible for registering the command
-| Composition Root depends on this function
+| ✅ Pure registration
+| ✅ No ExtensionContext
+| ✅ Single Source of Truth for CommandId
 */
 
 export function registerGenerateControllerCommand(): vscode.Disposable {
     return vscode.commands.registerCommand(
-        'cleanArch.generateController',
+        CommandIds.GenerateController,
         generateControllerCommand
     );
 }
@@ -25,10 +26,8 @@ export function registerGenerateControllerCommand(): vscode.Disposable {
 |--------------------------------------------------------------------------
 | Command Handler
 |--------------------------------------------------------------------------
-| Generate API Controller from I{Entity}Service
-|
-| Trigger:
-| ✅ Right‑click on I{Entity}Service.cs
+| ✅ Trigger: Right click on I{Entity}Service.cs
+| ✅ Depends only on ProjectContext DTO
 */
 
 export async function generateControllerCommand(uri: vscode.Uri) {
@@ -53,7 +52,7 @@ export async function generateControllerCommand(uri: vscode.Uri) {
     }
 
     // ----------------------------------
-    // Extract Entity Name
+    // Extract Entity
     // IProductService.cs → Product
     // ----------------------------------
     const entity = fileName
@@ -62,8 +61,10 @@ export async function generateControllerCommand(uri: vscode.Uri) {
 
     // ----------------------------------
     // Resolve Project Context
+    // ⚠️ Must pass file path (not directory)
     // ----------------------------------
     const ctx = resolveProjectContext(uri.fsPath);
+
     if (!ctx) {
         vscode.window.showErrorMessage(
             '❌ Unable to resolve project context'
@@ -72,19 +73,18 @@ export async function generateControllerCommand(uri: vscode.Uri) {
     }
 
     // ----------------------------------
-    // Detect API Project
+    // API Layer (Canonical Access)
     // ----------------------------------
-    const apiLayerPath = detectApiProject(ctx.rootPath, ctx.solutionName);
+    const apiLayerPath = ctx.layers.api;
+
     if (!apiLayerPath) {
         vscode.window.showErrorMessage(
-            '❌ API project not detected'
+            '❌ API layer not detected'
         );
         return;
     }
 
-    const apiProjectName =
-        path.basename(apiLayerPath);
-
+    const apiProjectName = path.basename(apiLayerPath);
     const plural = pluralize(entity);
 
     // ----------------------------------
@@ -96,6 +96,7 @@ export async function generateControllerCommand(uri: vscode.Uri) {
         `${entity}Controller.cs`
     );
 
+    // ✅ Enforce Controllers folder
     fs.mkdirSync(
         path.dirname(controllerPath),
         { recursive: true }
@@ -105,9 +106,9 @@ export async function generateControllerCommand(uri: vscode.Uri) {
     |--------------------------------------------------------------------------
     | Controller Generation
     |--------------------------------------------------------------------------
-    | ✅ Depends only on Application Layer
-    | ❌ No Entity exposure
-    | ✅ REST‑safe & Clean Architecture compliant
+    | ✅ Only Application contracts
+    | ✅ No Entity coupling
+    | ✅ REST‑safe
     */
 
     writeIfMissing(
@@ -121,59 +122,62 @@ using ${ctx.solutionName}.Application.DTOs.${plural};
 
 namespace ${apiProjectName}.Controllers
 {
-	[ApiController]
-	[Route("api/[controller]/[action]")]
-	public class ${entity}Controller : ControllerBase
-	{
-		private readonly I${entity}Service _service;
+    [ApiController]
+    [Route("api/[controller]/[action]")]
+    public sealed class ${entity}Controller : ControllerBase
+    {
+        private readonly I${entity}Service _service;
 
-		public ${entity}Controller(I${entity}Service service)
-		{
-			_service = service;
-		}
+        public ${entity}Controller(I${entity}Service service)
+        {
+            _service = service;
+        }
 
-		[HttpGet("{id:guid}")]
-		public async Task<ActionResult<${entity}Dto>> GetById(Guid id)
-		{
-			var result = await _service.GetByIdAsync(id);
-			return result == null ? NotFound() : Ok(result);
-		}
+        [HttpGet("{id:guid}")]
+        public async Task<ActionResult<${entity}Dto>> GetById(Guid id)
+        {
+            var result = await _service.GetByIdAsync(id);
+            return result == null ? NotFound() : Ok(result);
+        }
 
-		[HttpGet]
-		public async Task<ActionResult<List<${entity}Dto>>> GetAll()
-		{
-			var result = await _service.GetAllAsync();
-			return Ok(result);
-		}
+        [HttpGet]
+        public async Task<ActionResult<List<${entity}Dto>>> GetAll()
+        {
+            var result = await _service.GetAllAsync();
+            return Ok(result);
+        }
 
-		[HttpPost]
-		public async Task<ActionResult<${entity}Dto>> Create(
-			[FromBody] Create${entity}Dto dto)
-		{
-			var result = await _service.CreateAsync(dto);
-			return CreatedAtAction(
-				nameof(GetById),
-				new { id = result.Id },
-				result
-			);
-		}
+        [HttpPost]
+        public async Task<ActionResult<${entity}Dto>> Create(
+            [FromBody] Create${entity}Dto dto
+        )
+        {
+            var result = await _service.CreateAsync(dto);
+            return CreatedAtAction(
+                nameof(GetById),
+                new { id = result.Id },
+                result
+            );
+        }
 
-		[HttpPut]
-		public async Task<IActionResult> Update(
-			[FromBody] Update${entity}Dto dto)
-		{
-			await _service.UpdateAsync(dto);
-			return NoContent();
-		}
+        [HttpPut]
+        public async Task<IActionResult> Update(
+            [FromBody] Update${entity}Dto dto
+        )
+        {
+            await _service.UpdateAsync(dto);
+            return NoContent();
+        }
 
-		[HttpDelete("{id:guid}")]
-		public async Task<IActionResult> Delete(Guid id)
-		{
-			await _service.DeleteAsync(id);
-			return NoContent();
-		}
-	}
-}`
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _service.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+}
+`
     );
 
     vscode.window.showInformationMessage(

@@ -1,147 +1,156 @@
 import * as fs from 'fs';
 import * as path from 'path';
+
 import { ProjectContext } from '../core/projectContext';
-import { pluralize } from '../core/helpers';
+import { scanDomainEntities } from '../core/projectScanner';
 
-function parseEntity(entityFile: string): {
-    name: string;
-    attributes: string[];
-}[] {
+/*
+|--------------------------------------------------------------------------
+| Fluent Configuration Generator (Canonical)
+|--------------------------------------------------------------------------
+| ✅ IEntityTypeConfiguration<T>
+| ✅ DbContext Sync
+| ✅ ctx.layers only
+*/
 
-    const content = fs.readFileSync(entityFile, 'utf8');
-
-    const propertyRegex =
-        /(?:(\[[^\]]+]\s*)*)public\s+[^\s]+\s+([A-Z][A-Za-z0-9_]*)\s*\{\s*get;\s*set;\s*\}/g;
-
-    const props: {
-        name: string;
-        attributes: string[];
-    }[] = [];
-
-    let match: RegExpExecArray | null;
-
-    while ((match = propertyRegex.exec(content)) !== null) {
-        const rawAttrs = match[1] ?? '';
-        const attrs = Array.from(
-            rawAttrs.matchAll(/\[([A-Za-z0-9_]+)(?:\(([^)]*)\))?]/g)
-        ).map(m => m[0]);
-
-        props.push({
-            name: match[2],
-            attributes: attrs
-        });
-    }
-
-    return props;
-}
-
-/**
- * Build Fluent line from attributes
- */
-function buildFluentLine(prop: {
-    name: string;
-    attributes: string[];
-}): string {
-
-    let line = `builder.Property(x => x.${prop.name})`;
-
-    for (const attr of prop.attributes) {
-
-        if (attr.startsWith('[MaxLength')) {
-            const len = attr.match(/\d+/)?.[0];
-            if (len) line += `.HasMaxLength(${len})`;
-        }
-
-        if (attr.startsWith('[Required')) {
-            line += `.IsRequired()`;
-        }
-    }
-
-    return `\t\t${line};`;
-}
-
-/**
- * Generate or Sync Fluent Configuration
- */
-export function generateFluentConfiguration(
-    ctx: ProjectContext,
-    entity: string
+export function syncFluentConfigurations(
+    ctx: ProjectContext
 ): void {
 
-    const entityFile = path.join(
-        ctx.layers.domain,
-        'Entities',
-        `${entity}.cs`
-    );
+    const domainPath = ctx.layers.domain;
+    const infrastructurePath = ctx.layers.infrastructure;
 
-    if (!fs.existsSync(entityFile)) return;
+    if (!domainPath || !infrastructurePath) {
+        throw new Error('Domain or Infrastructure layer not found');
+    }
 
-    const configDir = path.join(
-        ctx.layers.infrastructure,
+    const entities = scanDomainEntities(domainPath);
+
+    if (entities.length === 0)
+        return;
+
+    const configurationsPath = path.join(
+        infrastructurePath,
         'Persistence',
         'Configurations'
     );
 
-    fs.mkdirSync(configDir, { recursive: true });
+    fs.mkdirSync(configurationsPath, { recursive: true });
 
-    const configFile = path.join(
-        configDir,
-        `${entity}Configuration.cs`
-    );
-
-    const props = parseEntity(entityFile);
-
-    // --------------------------------------------------
-    // Create Fluent if Missing
-    // --------------------------------------------------
-    if (!fs.existsSync(configFile)) {
-
-        const body = props.map(buildFluentLine).join('\n');
-
-        const content = `
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using ${ctx.solutionName}.Domain.Entities;
-
-namespace ${ctx.solutionName}.Infrastructure.Persistence.Configurations;
-
-public sealed class ${entity}Configuration
-	: IEntityTypeConfiguration<${entity}>
-{
-	public void Configure(EntityTypeBuilder<${entity}> builder)
-	{
-		builder.ToTable("${pluralize(entity)}");
-
-${body}
-	}
-}
-`.trim();
-
-        fs.writeFileSync(configFile, content, 'utf8');
-        return;
-    }
-
-    // --------------------------------------------------
-    // Sync Existing (Add Only)
-    // --------------------------------------------------
-    let fluent = fs.readFileSync(configFile, 'utf8');
-
-    for (const prop of props) {
-
-        const exists = new RegExp(
-            `Property\\s*\\(\\s*x\\s*=>\\s*x\\.${prop.name}\\b`,
-            'm'
-        ).test(fluent);
-
-        if (exists) continue;
-
-        const line = buildFluentLine(prop);
-
-        fluent = fluent.replace(
-            /\}\s*\}\s*$/,
-            `${line}\n\t}\n}`
+    for (const entity of entities) {
+        generateFluentConfig(
+            ctx,
+            entity.name,
+            entity.namespace,
+            configurationsPath
         );
     }
 
-    fs.writeFileSync(configFile, fluent, 'utf8');
+    syncDbContext(
+        ctx,
+        infrastructurePath,
+        entities.map(e => e.name)
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Generate IEntityTypeConfiguration<T>
+|--------------------------------------------------------------------------
+*/
+
+function generateFluentConfig(
+    ctx: ProjectContext,
+    entityName: string,
+    entityNamespace: string,
+    targetPath: string
+): void {
+
+    const filePath = path.join(
+        targetPath,
+        `${entityName}Configuration.cs`
+    );
+
+    if (fs.existsSync(filePath))
+        return;
+
+    const content = `using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using ${entityNamespace};
+
+namespace ${ctx.solutionName}.Infrastructure.Persistence.Configurations
+{
+    /// <summary>
+    /// Fluent configuration for ${entityName}
+    /// </summary>
+    public sealed class ${entityName}Configuration : IEntityTypeConfiguration<${entityName}>
+    {
+        public void Configure(
+            EntityTypeBuilder<${entityName}> builder
+        )
+        {
+            builder.HasKey(e => e.Id);
+
+            // TODO: Configure properties & relationships
+        }
+    }
+}
+`;
+
+    fs.writeFileSync(filePath, content, 'utf8');
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sync DbContext
+|--------------------------------------------------------------------------
+*/
+
+function syncDbContext(
+    ctx: ProjectContext,
+    infrastructurePath: string,
+    entityNames: string[]
+): void {
+
+    const contextPath = path.join(
+        infrastructurePath,
+        'Persistence',
+        'Contexts'
+    );
+
+    if (!fs.existsSync(contextPath))
+        return;
+
+    const files = fs.readdirSync(contextPath)
+        .filter(f => f.endsWith('DbContext.cs'));
+
+    if (files.length === 0)
+        return;
+
+    const dbContextFile = path.join(contextPath, files[0]);
+    let content = fs.readFileSync(dbContextFile, 'utf8');
+
+    const marker = 'protected override void OnModelCreating';
+
+    if (!content.includes(marker))
+        return;
+
+    const applyLines = entityNames
+        .map(e =>
+            `            modelBuilder.ApplyConfiguration(new ${e}Configuration());`
+        )
+        .join('\n');
+
+    if (content.includes(applyLines))
+        return;
+
+    content = content.replace(
+        /(protected override void OnModelCreating\s*\([\s\S]*?\)\s*\{\s*)/,
+        `$1
+${applyLines}
+
+`
+    );
+
+    fs.writeFileSync(dbContextFile, content, 'utf8');
 }

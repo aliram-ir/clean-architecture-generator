@@ -1,29 +1,24 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { detectLayers, DetectedLayers } from './layerDetector';
 
-/**
- * Project Context
- * کانتکست سراسری پروژه
- */
-export interface ProjectContext {
-    rootPath: string;
-    solutionName: string;
-    mode: 'solution' | 'project';
-    layers: DetectedLayers;
-}
+import { detectLayers } from './layerDetector';
+import { ProjectContext } from './projectContext';
 
-/**
- * Universal Project Resolver
- * تشخیص Solution یا Project و لایه‌های Clean Architecture
- */
+/*
+|--------------------------------------------------------------------------
+| Project Context Resolver
+|--------------------------------------------------------------------------
+| ✅ Factory only
+| ✅ Returns canonical ProjectContext
+*/
+
 export function resolveProjectContext(
     startFile: string
 ): ProjectContext | null {
 
     const startDir = path.dirname(startFile);
 
-    // 🔍 Search for Solution (.sln)
+    // 🔍 Find Solution (.sln)
     const slnRoot = findUp(startDir, dir =>
         fs.existsSync(dir) &&
         fs.readdirSync(dir).some(f => f.endsWith('.sln'))
@@ -41,7 +36,7 @@ export function resolveProjectContext(
         };
     }
 
-    // 🔁 Fallback: single csproj mode
+    // 🔁 Fallback: single project mode
     const csprojRoot = findUp(startDir, dir =>
         fs.existsSync(dir) &&
         fs.readdirSync(dir).some(f => f.endsWith('.csproj'))
@@ -62,10 +57,12 @@ export function resolveProjectContext(
     return null;
 }
 
-/**
- * Utility: find directory upwards
- * جستجوی پوشه‌ها به سمت بالا
- */
+/*
+|--------------------------------------------------------------------------
+| Utility: find directory upwards
+|--------------------------------------------------------------------------
+*/
+
 function findUp(
     start: string,
     predicate: (dir: string) => boolean

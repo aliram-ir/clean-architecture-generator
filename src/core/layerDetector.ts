@@ -3,8 +3,11 @@ import * as path from 'path';
 
 /*
 |--------------------------------------------------------------------------
-| Detected Layers Contract
+| Detected Layers Contract (SSOT)
 |--------------------------------------------------------------------------
+| ✅ تنها منبع حقیقت برای لایه‌ها
+| ✅ Object-based (Map)
+| ✅ بدون هیچ منطق اضافی
 */
 
 export interface DetectedLayers {
@@ -21,8 +24,9 @@ export interface DetectedLayers {
 | Detect Layers
 |--------------------------------------------------------------------------
 | ✅ Flexible naming
-| ✅ Works with or without solution prefix
-| ✅ Safe fallback
+| ✅ Solution / Project mode safe
+| ✅ FS-only
+| ✅ No side effects
 */
 
 export function detectLayers(
@@ -59,6 +63,7 @@ export function detectLayers(
         }
     }
 
+    // ✅ Hard guarantees only for core layers
     return {
         domain: result.domain ?? path.join(root, `${solution}.Domain`),
         application: result.application ?? path.join(root, `${solution}.Application`),
@@ -67,44 +72,4 @@ export function detectLayers(
         di: result.di,
         api: result.api
     };
-}
-
-/*
-|--------------------------------------------------------------------------
-| Detect API Project
-|--------------------------------------------------------------------------
-| ✅ Used by Controller Generator
-| ✅ Strict csproj check
-*/
-
-export function detectApiProject(
-    root: string,
-    solution: string
-): string | null {
-
-    const apiCandidates = [
-        `${solution}.API`,
-        `${solution}.Web`,
-        `${solution}.WebApi`,
-        'API',
-        'Web',
-        'WebApi'
-    ];
-
-    for (const name of apiCandidates) {
-
-        const fullPath = path.join(root, name);
-
-        if (!fs.existsSync(fullPath)) continue;
-
-        const hasCsproj = fs
-            .readdirSync(fullPath)
-            .some(f => f.endsWith('.csproj'));
-
-        if (hasCsproj) {
-            return fullPath;
-        }
-    }
-
-    return null;
 }
