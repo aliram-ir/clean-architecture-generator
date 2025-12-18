@@ -1,15 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-/*
-|--------------------------------------------------------------------------
-| Detected Layers Contract (SSOT)
-|--------------------------------------------------------------------------
-| ✅ تنها منبع حقیقت برای لایه‌ها
-| ✅ Object-based (Map)
-| ✅ بدون هیچ منطق اضافی
-*/
-
 export interface DetectedLayers {
     domain: string;
     application: string;

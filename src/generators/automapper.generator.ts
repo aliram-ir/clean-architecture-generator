@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ProjectContext } from '../core/projectContext';
+import { pluralize } from '../core/helpers';
 
 /*
 |--------------------------------------------------------------------------
@@ -25,6 +26,8 @@ export function generateAutoMapperProfile(
         mappingsPath,
         `${entity}Profile.cs`
     );
+    const plural = pluralize(entity);
+    const dtoNamespace = plural.toLowerCase();
 
     if (fs.existsSync(filePath))
         return;
@@ -33,7 +36,7 @@ export function generateAutoMapperProfile(
 
     const content = `using AutoMapper;
 using ${ctx.solutionName}.Domain.Entities;
-using ${ctx.solutionName}.Application.DTOs.${entity}s;
+using ${ctx.solutionName}.Application.DTOs.${dtoNamespace}s;
 
 namespace ${ctx.solutionName}.Application.Mappings
 {

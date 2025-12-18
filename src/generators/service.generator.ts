@@ -73,9 +73,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.Extensions.Caching.Memory;
-using ${ctx.solutionName}.Application.DTOs.${dtoNamespace}; // ✅ lowercase
+using ${ctx.solutionName}.Application.DTOs.${dtoNamespace};
 using ${ctx.solutionName}.Application.Interfaces.Services;
-using ${ctx.solutionName}.Application.Interfaces.Persistence; // ✅ CORRECT
+using ${ctx.solutionName}.Application.Interfaces.Persistence;
 using ${ctx.solutionName}.Application.Services.Base;
 using ${ctx.solutionName}.Domain.Entities;
 
@@ -97,7 +97,6 @@ namespace ${ctx.solutionName}.Application.Services
             _mapper = mapper;
         }
 
-        // ✅ پاک‌سازی کش‌ها (GetAll + optional GetById)
         private void InvalidateCache(Guid? id = null)
         {
             _cache.Remove(BuildCacheKey(nameof(GetAllAsync)));
@@ -134,7 +133,6 @@ namespace ${ctx.solutionName}.Application.Services
         {
             var cacheKey = BuildCacheKey(nameof(GetAllAsync));
             
-            // --- اصلاح: کش باید null‑safe باشد ---
             if (_cache.TryGetValue(cacheKey, out List<${entityName}Dto>? cached))
                 return cached ?? new List<${entityName}Dto>();
 

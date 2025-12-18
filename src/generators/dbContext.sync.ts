@@ -3,9 +3,6 @@ import * as fs from 'fs';
 import { ProjectContext } from '../core/projectContext';
 
 /*
-|--------------------------------------------------------------------------
-| Canonical DbContext Synchronizer (LOCKED v2.1.1)
-|--------------------------------------------------------------------------
 | ✅ Creates DbContext if missing
 | ✅ Keeps formatting clean
 | ✅ DbSet<T> ordered and idempotent
@@ -37,33 +34,31 @@ export function syncDbContext(
         fs.writeFileSync(
             dbContextPath,
             `using Microsoft.EntityFrameworkCore;
-using ${ctx.solutionName}.Domain.Entities;
+            using ${ctx.solutionName}.Domain.Entities;
 
-namespace ${ctx.solutionName}.Infrastructure.Persistence.Contexts
-{
-    /// <summary>
-    /// EF Core DbContext
-    /// </summary>
-    public class ApplicationDbContext : DbContext
-    {
-        public ApplicationDbContext(
-            DbContextOptions<ApplicationDbContext> options
-        ) : base(options)
-        {
-        }
+            namespace ${ctx.solutionName}.Infrastructure.Persistence.Contexts
+            {
+                /// <summary>
+                /// EF Core DbContext
+                /// </summary>
+                public class ApplicationDbContext : DbContext
+                {
+                    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
+                    {
+                    }
 
-        protected override void OnModelCreating(
-            ModelBuilder modelBuilder
-        )
-        {
-            modelBuilder.ApplyConfigurationsFromAssembly(
-                typeof(ApplicationDbContext).Assembly
-            );
+                    protected override void OnModelCreating(
+                        ModelBuilder modelBuilder
+                    )
+                    {
+                        modelBuilder.ApplyConfigurationsFromAssembly(
+                            typeof(ApplicationDbContext).Assembly
+                        );
 
-            base.OnModelCreating(modelBuilder);
-        }
-    }
-}
+                        base.OnModelCreating(modelBuilder);
+                    }
+                }
+            }
 `,
             'utf8'
         );

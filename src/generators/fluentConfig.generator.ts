@@ -119,11 +119,9 @@ function generateFluentConfig(
     // -----------------------------
     for (const p of properties) {
 
-        // ❌ Self reference guard (User.User)
         if (p.name === entityName)
             continue;
 
-        // ❌ Id دوباره Property نشود
         if (p.name === key)
             continue;
 

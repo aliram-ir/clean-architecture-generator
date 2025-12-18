@@ -54,7 +54,7 @@ using ${ctx.solutionName}.Application.Interfaces.Repositories;
 namespace ${ctx.solutionName}.Application.Interfaces.Persistence
 {
     /// <summary>
-    /// Contract اصلی UnitOfWork (Canonical)
+    /// Contract UnitOfWork
     /// </summary>
     public interface IUnitOfWork : IDisposable
     {
@@ -125,7 +125,7 @@ using ${ctx.solutionName}.Infrastructure.Repositories;
 namespace ${ctx.solutionName}.Infrastructure.Persistence
 {
     /// <summary>
-    /// پیاده‌سازی Canonical UnitOfWork
+    ///  Implimention UnitOfWork
     /// </summary>
     public sealed class UnitOfWork : IUnitOfWork
     {

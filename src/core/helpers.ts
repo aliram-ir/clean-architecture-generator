@@ -1,14 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-/*
-|--------------------------------------------------------------------------
-| Naming Utilities (Canonical)
-|--------------------------------------------------------------------------
-| ❗️هیچ Generatorی حق تعریف Local Case Converter ندارد
-| ❗️همه باید از این فایل ایمپورت کنند
-*/
-
 /**
  * toPascalCase
  * user_profile -> UserProfile
