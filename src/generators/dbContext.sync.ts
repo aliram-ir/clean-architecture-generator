@@ -2,6 +2,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ProjectContext } from '../core/projectContext';
 
+/*
+|--------------------------------------------------------------------------
+| Canonical DbContext Synchronizer (LOCKED v2.1.1)
+|--------------------------------------------------------------------------
+| ✅ Creates DbContext if missing
+| ✅ Keeps formatting clean
+| ✅ DbSet<T> ordered and idempotent
+| ✅ Fluent configurations applied safely
+*/
+
 export function syncDbContext(
     ctx: ProjectContext,
     entity: string
@@ -54,44 +64,48 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence.Contexts
         }
     }
 }
-`
+`,
+            'utf8'
         );
     }
 
     let content = fs.readFileSync(dbContextPath, 'utf8');
 
     // ===============================
-    // DbSet<TEntity> sync
+    // DbSet<TEntity> sync (clean insert)
     // ===============================
     const dbSetLine =
         `        public DbSet<${entity}> ${entity}s => Set<${entity}>();\n\n`;
 
     if (!content.includes(`DbSet<${entity}>`)) {
 
-        const insertPoint =
-            content.indexOf(
-                'protected override void OnModelCreating'
-            );
+        const classBodyMatch =
+            content.match(/public class ApplicationDbContext[\s\S]*?\{([\s\S]*?)protected override void OnModelCreating/);
 
-        if (insertPoint !== -1) {
+        if (classBodyMatch) {
+
+            const insertIndex =
+                content.indexOf('protected override void OnModelCreating');
 
             content =
-                content.slice(0, insertPoint) +
+                content.slice(0, insertIndex) +
                 dbSetLine +
-                content.slice(insertPoint);
+                content.slice(insertIndex);
 
             fs.writeFileSync(dbContextPath, content, 'utf8');
         }
     }
 
     // ===============================
-    // Fluent Config Apply Sync
+    // Ensure Fluent Configurations Apply
     // ===============================
     if (!content.includes('ApplyConfigurationsFromAssembly')) {
 
         content = content.replace(
             /protected override void OnModelCreating\s*\(\s*ModelBuilder modelBuilder\s*\)\s*\{/,
-            `protected override void OnModelCreating(ModelBuilder modelBuilder)
+            `protected override void OnModelCreating(
+            ModelBuilder modelBuilder
+        )
         {
             modelBuilder.ApplyConfigurationsFromAssembly(
                 typeof(ApplicationDbContext).Assembly

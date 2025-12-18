@@ -6,7 +6,7 @@
   "name": "clean-architecture-generator-aliram",
   "displayName": "Clean Architecture Generator by AliRamezani",
   "description": "Generate and scaffold Clean Architecture projects for .NET with repositories, services, DTOs, DbContext, DI sync and API controllers.",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "icon": "icon.png",
   "homepage": "https://github.com/aliram-ir/clean-architecture-generator",
   "repository": {

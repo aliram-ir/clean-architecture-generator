@@ -2,11 +2,6 @@ import * as path from 'path';
 import { ProjectContext } from '../core/projectContext';
 import { pluralize, writeIfMissing } from '../core/helpers';
 
-/*
-|--------------------------------------------------------------------------
-| Utils
-|--------------------------------------------------------------------------
-*/
 
 function toPascalCase(name: string): string {
     return name
@@ -14,16 +9,6 @@ function toPascalCase(name: string): string {
         .replace(/^(.)/, c => c.toUpperCase());
 }
 
-/*
-|--------------------------------------------------------------------------
-| Service Generator (Canonical – Locked)
-|--------------------------------------------------------------------------
-| ✅ DTO Namespace = lowercase (Linux / CI safe)
-| ✅ Golden Sample za
-| ✅ Correct UoW / Repo contract
-| ✅ Cache Invalidation FIXED
-| ✅ One‑Shot – Frozen
-*/
 
 export function generateService(
     ctx: ProjectContext,
@@ -33,7 +18,7 @@ export function generateService(
     const entityName = toPascalCase(entity);              // User
     const plural = pluralize(entityName);                 // Users
     const dtoNamespace = plural.toLowerCase();            // users ✅
-    const repoProperty = plural;                           // Users (UoW)
+    const repoProperty = plural;                          // Users (UoW)
 
     const applicationRoot = ctx.layers.application;
 
@@ -128,7 +113,7 @@ namespace ${ctx.solutionName}.Application.Services
         {
             var cacheKey = BuildCacheKey(nameof(GetByIdAsync), id);
 
-            if (_cache.TryGetValue(cacheKey, out ${entityName}Dto cached))
+            if (_cache.TryGetValue(cacheKey, out ${entityName}Dto? cached))
                 return cached;
 
             var entity = await _unitOfWork.${repoProperty}
@@ -148,12 +133,13 @@ namespace ${ctx.solutionName}.Application.Services
         )
         {
             var cacheKey = BuildCacheKey(nameof(GetAllAsync));
-
-            if (_cache.TryGetValue(cacheKey, out List<${entityName}Dto> cached))
-                return cached;
+            
+            // --- اصلاح: کش باید null‑safe باشد ---
+            if (_cache.TryGetValue(cacheKey, out List<${entityName}Dto>? cached))
+                return cached ?? new List<${entityName}Dto>();
 
             var entities = await _unitOfWork.${repoProperty}
-                .GetAllAsync(cancellationToken: cancellationToken);
+                .GetAllAsync(null, null, true, cancellationToken);
 
             var dtos = _mapper.Map<List<${entityName}Dto>>(entities);
             _cache.Set(cacheKey, dtos, _defaultCacheDuration);

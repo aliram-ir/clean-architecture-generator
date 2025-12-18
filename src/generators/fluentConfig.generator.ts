@@ -5,15 +5,16 @@ import { scanDomainEntities } from '../core/projectScanner';
 
 /*
 |--------------------------------------------------------------------------
-| Fluent Configuration Generator (Canonical v2.1.1)
+| Canonical Fluent Configuration Generator (LOCKED v2.1.1)
 |--------------------------------------------------------------------------
-| ✅ Reflective configuration generator
-| ✅ Idempotent creation in Infrastructure.Persistence.Configurations
-| ✅ Syncs DbContext automatically
-| ✅ Reads entity metadata (properties & relationships)
+| ✅ Pure FS scan
+| ✅ Entity‑aware (no false Property)
+| ✅ Navigation‑safe
+| ✅ Idempotent
 */
 
 export function syncFluentConfigurations(ctx: ProjectContext): void {
+
     const domainPath = ctx.layers.domain;
     const infrastructurePath = ctx.layers.infrastructure;
 
@@ -23,24 +24,34 @@ export function syncFluentConfigurations(ctx: ProjectContext): void {
     const entities = scanDomainEntities(domainPath);
     if (entities.length === 0) return;
 
-    const configsPath = path.join(infrastructurePath, 'Persistence', 'Configurations');
+    const entityNames = entities.map(e => e.name);
+
+    const configsPath = path.join(
+        infrastructurePath,
+        'Persistence',
+        'Configurations'
+    );
+
     fs.mkdirSync(configsPath, { recursive: true });
 
     for (const entity of entities) {
-        generateFluentConfig(ctx, entity.name, entity.namespace, entity.filePath, configsPath);
+        generateFluentConfig(
+            ctx,
+            entity.name,
+            entity.namespace,
+            entity.filePath,
+            configsPath,
+            entityNames
+        );
     }
 
-    syncDbContext(ctx, infrastructurePath, entities.map(e => e.name));
+    syncDbContext(ctx, infrastructurePath, entityNames);
 }
 
 /*
 |--------------------------------------------------------------------------
-| Generate IEntityTypeConfiguration<T> Based on Entity Structure
+| Generate Single IEntityTypeConfiguration<T>
 |--------------------------------------------------------------------------
-| 🔹 Scans *.cs entity source code
-| 🔹 Detects primary key (Id or [Key])
-| 🔹 Generates HasOne/HasMany relations if types match domain entities
-| 🔹 Generates Property for scalar (primitive) types
 */
 
 function generateFluentConfig(
@@ -48,41 +59,87 @@ function generateFluentConfig(
     entityName: string,
     entityNamespace: string,
     entityPath: string,
-    targetPath: string
+    targetPath: string,
+    allEntities: string[]
 ): void {
-    const filePath = path.join(targetPath, `${entityName}Configuration.cs`);
+
+    const filePath = path.join(
+        targetPath,
+        `${entityName}Configuration.cs`
+    );
+
     if (fs.existsSync(filePath)) return;
 
     const raw = fs.readFileSync(entityPath, 'utf8');
-    const propertyRegex = /public\s+([A-Za-z0-9_<>\[\]?]+)\s+([A-Za-z0-9_]+)\s*\{/g;
+
+    const propertyRegex =
+        /public\s+([A-Za-z0-9_<>\[\]?]+)\s+([A-Za-z0-9_]+)\s*\{/g;
+
     const matches = Array.from(raw.matchAll(propertyRegex));
 
-    // Extract simple & navigation properties
-    const props = matches.map(m => {
+    const properties = matches.map(m => {
+
         const type = m[1];
         const name = m[2];
+
+        const isCollection =
+            /(ICollection|List|HashSet)</.test(type);
+
+        const pureType =
+            type.replace(/ICollection<|List<|HashSet<|>/g, '');
+
+        const isEntity =
+            allEntities.includes(pureType);
+
+        const isScalar =
+            !isEntity &&
+            !isCollection &&
+            /(string|int|long|Guid|DateTime|bool|decimal|double|float)/.test(type);
+
         return {
-            type,
             name,
-            isCollection: /(ICollection|List|HashSet)</.test(type),
-            isEntity:
-                /^[A-Z]/.test(type) &&
-                !/(string|int|long|Guid|DateTime|bool|decimal|double|float)/.test(type)
+            type,
+            pureType,
+            isScalar,
+            isEntity,
+            isCollection
         };
     });
 
-    // Detect primary key
-    const key = props.find(p => p.name.toLowerCase() === 'id')?.name ?? 'Id';
+    // -----------------------------
+    // Primary Key
+    // -----------------------------
+    const key =
+        properties.find(p => p.name === 'Id')?.name ?? 'Id';
 
-    let body = `builder.HasKey(e => e.${key});\n\n`;
+    let body = `builder.HasKey(e => e.${key});\n`;
 
-    for (const p of props) {
-        if (!p.isEntity && !p.isCollection) {
-            body += `builder.Property(e => e.${p.name});\n`;
-        } else if (p.isEntity) {
-            body += `builder.HasOne(e => e.${p.name}).WithMany();\n`;
-        } else if (p.isCollection) {
-            body += `builder.HasMany(e => e.${p.name}).WithOne();\n`;
+    // -----------------------------
+    // Properties & Relations
+    // -----------------------------
+    for (const p of properties) {
+
+        // ❌ Self reference guard (User.User)
+        if (p.name === entityName)
+            continue;
+
+        // ❌ Id دوباره Property نشود
+        if (p.name === key)
+            continue;
+
+        if (p.isScalar) {
+            body += `\nbuilder.Property(e => e.${p.name});`;
+            continue;
+        }
+
+        if (p.isEntity) {
+            body += `\nbuilder.HasOne(e => e.${p.name}).WithMany();`;
+            continue;
+        }
+
+        if (p.isCollection && allEntities.includes(p.pureType)) {
+            body += `\nbuilder.HasMany(e => e.${p.name}).WithOne();`;
+            continue;
         }
     }
 
@@ -96,11 +153,14 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence.Configurations
     /// Canonical fluent configuration for ${entityName}.
     /// Auto-generated from entity structure.
     /// </summary>
-    public sealed class ${entityName}Configuration : IEntityTypeConfiguration<${entityName}>
+    public sealed class ${entityName}Configuration
+        : IEntityTypeConfiguration<${entityName}>
     {
-        public void Configure(EntityTypeBuilder<${entityName}> builder)
+        public void Configure(
+            EntityTypeBuilder<${entityName}> builder
+        )
         {
-${indentLines(body)}
+${indent(body)}
         }
     }
 }
@@ -111,50 +171,56 @@ ${indentLines(body)}
 
 /*
 |--------------------------------------------------------------------------
-| Helper: Indent lines
+| Indent Helper
 |--------------------------------------------------------------------------
 */
-function indentLines(content: string): string {
+function indent(content: string): string {
     return content
         .trim()
         .split('\n')
-        .map(l => '            ' + l.trim())
+        .map(l => '            ' + l)
         .join('\n');
 }
 
 /*
 |--------------------------------------------------------------------------
-| Sync DbContext with Generated Configurations
+| DbContext Sync (ApplyConfiguration)
 |--------------------------------------------------------------------------
-| ✅ Adds missing modelBuilder.ApplyConfiguration(new EntityConfiguration())
-| ✅ Detects existing lines to avoid duplicates
-| ✅ Works for any DbContext under Infrastructure.Persistence.Contexts
 */
-
 function syncDbContext(
     ctx: ProjectContext,
     infrastructurePath: string,
     entityNames: string[]
 ): void {
-    const contextPath = path.join(infrastructurePath, 'Persistence', 'Contexts');
+
+    const contextPath = path.join(
+        infrastructurePath,
+        'Persistence',
+        'Contexts'
+    );
+
     if (!fs.existsSync(contextPath)) return;
 
-    const dbContextFiles = fs.readdirSync(contextPath).filter(f => f.endsWith('DbContext.cs'));
-    if (dbContextFiles.length === 0) return;
+    const dbContextFile =
+        fs.readdirSync(contextPath).find(f => f.endsWith('DbContext.cs'));
 
-    const dbContextFile = path.join(contextPath, dbContextFiles[0]);
-    let dbContent = fs.readFileSync(dbContextFile, 'utf8');
+    if (!dbContextFile) return;
 
-    const marker = 'protected override void OnModelCreating';
-    if (!dbContent.includes(marker)) return;
+    const fullPath = path.join(contextPath, dbContextFile);
+    let content = fs.readFileSync(fullPath, 'utf8');
 
-    const applyLines = entityNames.map(e => `            modelBuilder.ApplyConfiguration(new ${e}Configuration());`).join('\n');
-    if (entityNames.some(e => dbContent.includes(`${e}Configuration()`))) return;
+    if (entityNames.some(e => content.includes(`${e}Configuration()`)))
+        return;
 
-    dbContent = dbContent.replace(
+    const applyLines =
+        entityNames
+            .map(e => `            modelBuilder.ApplyConfiguration(new ${e}Configuration());`)
+            .join('\n');
+
+    content = content.replace(
         /(protected override void OnModelCreating\s*\([\s\S]*?\)\s*\{\s*)/,
         `$1\n${applyLines}\n`
     );
 
-    fs.writeFileSync(dbContextFile, dbContent, 'utf8');
+    fs.writeFileSync(fullPath, content, 'utf8');
 }

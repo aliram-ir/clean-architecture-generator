@@ -141,7 +141,7 @@ ${registrations.map(r => `            ${r}`).join('\n')}
             // ------------------------------
             // AutoMapper
             // ------------------------------
-            services.AddAutoMapper(typeof(ServiceCollectionExtensions).Assembly);
+            services.AddAutoMapper(cfg => { }, AppDomain.CurrentDomain.GetAssemblies());
 
             return services;
         }
