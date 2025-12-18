@@ -36,7 +36,7 @@ export function generateAutoMapperProfile(
 
     const content = `using AutoMapper;
 using ${ctx.solutionName}.Domain.Entities;
-using ${ctx.solutionName}.Application.DTOs.${dtoNamespace}s;
+using ${ctx.solutionName}.Application.DTOs.${dtoNamespace};
 
 namespace ${ctx.solutionName}.Application.Mappings
 {
