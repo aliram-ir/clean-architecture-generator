@@ -2,17 +2,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ProjectContext } from '../core/projectContext';
 
-/**
- * DbContext safe sync
- *
- * ✅ تضمین وجود:
- * - DbSet<TEntity>
- * - modelBuilder.ApplyConfigurationsFromAssembly(...)
- *
- * ✅ Non‑destructive
- * ✅ Safe to re-run
- */
-export function syncDbContext(ctx: ProjectContext, entity: string): void {
+export function syncDbContext(
+    ctx: ProjectContext,
+    entity: string
+): void {
 
     const dbContextPath = path.join(
         ctx.layers.infrastructure,
@@ -25,7 +18,11 @@ export function syncDbContext(ctx: ProjectContext, entity: string): void {
     // Create DbContext if missing
     // ===============================
     if (!fs.existsSync(dbContextPath)) {
-        fs.mkdirSync(path.dirname(dbContextPath), { recursive: true });
+
+        fs.mkdirSync(
+            path.dirname(dbContextPath),
+            { recursive: true }
+        );
 
         fs.writeFileSync(
             dbContextPath,
@@ -37,18 +34,27 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence.Contexts
     /// <summary>
     /// EF Core DbContext
     /// </summary>
-	public class ApplicationDbContext : DbContext
-	{
-		public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-			: base(options) { }
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(
+            DbContextOptions<ApplicationDbContext> options
+        ) : base(options)
+        {
+        }
 
-		protected override void OnModelCreating(ModelBuilder modelBuilder)
-		{
-			modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
-			base.OnModelCreating(modelBuilder);
-		}
-	}
-}`
+        protected override void OnModelCreating(
+            ModelBuilder modelBuilder
+        )
+        {
+            modelBuilder.ApplyConfigurationsFromAssembly(
+                typeof(ApplicationDbContext).Assembly
+            );
+
+            base.OnModelCreating(modelBuilder);
+        }
+    }
+}
+`
         );
     }
 
@@ -58,19 +64,23 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence.Contexts
     // DbSet<TEntity> sync
     // ===============================
     const dbSetLine =
-        `		public DbSet<${entity}> ${entity}s => Set<${entity}>();\n`;
+        `        public DbSet<${entity}> ${entity}s => Set<${entity}>();\n\n`;
 
     if (!content.includes(`DbSet<${entity}>`)) {
 
-        const insertPoint = content.indexOf('protected override void OnModelCreating');
+        const insertPoint =
+            content.indexOf(
+                'protected override void OnModelCreating'
+            );
 
         if (insertPoint !== -1) {
+
             content =
                 content.slice(0, insertPoint) +
-                dbSetLine + '\n' +
+                dbSetLine +
                 content.slice(insertPoint);
 
-            fs.writeFileSync(dbContextPath, content);
+            fs.writeFileSync(dbContextPath, content, 'utf8');
         }
     }
 
@@ -80,16 +90,14 @@ namespace ${ctx.solutionName}.Infrastructure.Persistence.Contexts
     if (!content.includes('ApplyConfigurationsFromAssembly')) {
 
         content = content.replace(
-            'protected override void OnModelCreating(ModelBuilder modelBuilder)',
-            `protected override void OnModelCreating(ModelBuilder modelBuilder)`
+            /protected override void OnModelCreating\s*\(\s*ModelBuilder modelBuilder\s*\)\s*\{/,
+            `protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.ApplyConfigurationsFromAssembly(
+                typeof(ApplicationDbContext).Assembly
+            );`
         );
 
-        content = content.replace(
-            '{',
-            `{
-			modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);`
-        );
-
-        fs.writeFileSync(dbContextPath, content);
+        fs.writeFileSync(dbContextPath, content, 'utf8');
     }
 }

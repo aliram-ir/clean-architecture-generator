@@ -8,17 +8,6 @@ import {
     scanInfrastructureRepositories
 } from '../core/projectScanner';
 
-/*
-|--------------------------------------------------------------------------
-| Dependency Injection Sync (Canonical – Locked)
-|--------------------------------------------------------------------------
-| ✅ Interface‑driven
-| ✅ Fail‑safe
-| ✅ Deterministic
-| ✅ Overwrite by design
-| ✅ NO blind registrations
-*/
-
 export function syncDependencyInjection(
     ctx: ProjectContext
 ): void {
@@ -40,7 +29,7 @@ export function syncDependencyInjection(
     fs.mkdirSync(extensionsPath, { recursive: true });
 
     // ----------------------------------------------------------
-    // ✅ Pure filesystem scans (SSOT)
+    // SSOT – filesystem scan
     // ----------------------------------------------------------
 
     const services = scanApplicationServices(applicationPath);
@@ -49,11 +38,9 @@ export function syncDependencyInjection(
 
     const registrations: string[] = [];
 
-    /*
-    |--------------------------------------------------------------------------
-    | Application Services
-    |--------------------------------------------------------------------------
-    */
+    // ----------------------------------------------------------
+    // Application Services
+    // ----------------------------------------------------------
     for (const svc of services) {
 
         const iface = serviceInterfaces.find(
@@ -68,14 +55,9 @@ export function syncDependencyInjection(
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Infrastructure Repositories (STRICT)
-    |--------------------------------------------------------------------------
-    | ✅ Only if matching Application Interface exists
-    | ✅ Excludes Base Repository
-    |--------------------------------------------------------------------------
-    */
+    // ----------------------------------------------------------
+    // Repositories
+    // ----------------------------------------------------------
     const repoInterfacesPath = path.join(
         applicationPath,
         'Interfaces',
@@ -90,16 +72,14 @@ export function syncDependencyInjection(
 
     for (const repo of repositories) {
 
-        // ❌ Base repository must never be registered
         if (repo.name === 'Repository')
             continue;
 
-        // UserRepository → IUserRepository
         const expectedInterfaceName =
             `I${repo.name.replace('Repository', '')}Repository`;
 
         if (!repoInterfaceFiles.includes(expectedInterfaceName))
-            continue; // ✅ FAIL‑SAFE
+            continue;
 
         const ifaceNamespace =
             `${ctx.solutionName}.Application.Interfaces.Repositories`;
@@ -109,22 +89,21 @@ export function syncDependencyInjection(
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Unit Of Work (Single Source)
-    |--------------------------------------------------------------------------
-    */
+    // ----------------------------------------------------------
+    // Unit Of Work
+    // ----------------------------------------------------------
     registrations.push(
         `services.AddScoped<${ctx.solutionName}.Application.Interfaces.Persistence.IUnitOfWork, ${ctx.solutionName}.Infrastructure.Persistence.UnitOfWork>();`
     );
 
     // ----------------------------------------------------------
-    // ✅ Deterministic Composition Root
+    // Composition Root
     // ----------------------------------------------------------
-
-    const content = `using Microsoft.Extensions.DependencyInjection;
+    const content = `using System;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
+using AutoMapper;
 
 using ${ctx.solutionName}.Infrastructure.Persistence.Contexts;
 
@@ -162,7 +141,7 @@ ${registrations.map(r => `            ${r}`).join('\n')}
             // ------------------------------
             // AutoMapper
             // ------------------------------
-            services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+            services.AddAutoMapper(typeof(ServiceCollectionExtensions).Assembly);
 
             return services;
         }

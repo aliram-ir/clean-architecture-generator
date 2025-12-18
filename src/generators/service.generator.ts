@@ -132,7 +132,7 @@ namespace ${ctx.solutionName}.Application.Services
                 return cached;
 
             var entity = await _unitOfWork.${repoProperty}
-                .GetByIdAsync(id, cancellationToken);
+                .GetByIdAsync(id, cancellationToken: cancellationToken);
 
             if (entity == null)
                 return null;
@@ -153,7 +153,7 @@ namespace ${ctx.solutionName}.Application.Services
                 return cached;
 
             var entities = await _unitOfWork.${repoProperty}
-                .GetAllAsync(cancellationToken);
+                .GetAllAsync(cancellationToken: cancellationToken);
 
             var dtos = _mapper.Map<List<${entityName}Dto>>(entities);
             _cache.Set(cacheKey, dtos, _defaultCacheDuration);
@@ -169,9 +169,9 @@ namespace ${ctx.solutionName}.Application.Services
             var entity = _mapper.Map<${entityName}>(dto);
 
             await _unitOfWork.${repoProperty}
-                .AddAsync(entity, cancellationToken);
+                .AddAsync(entity, cancellationToken: cancellationToken);
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken: cancellationToken);
 
             InvalidateCache();
 
@@ -185,13 +185,13 @@ namespace ${ctx.solutionName}.Application.Services
         )
         {
             var entity = await _unitOfWork.${repoProperty}
-                .GetByIdAsync(id, cancellationToken);
+                .GetByIdAsync(id, cancellationToken: cancellationToken);
 
             if (entity == null)
                 return null;
 
             _mapper.Map(dto, entity);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken: cancellationToken);
 
             InvalidateCache(id);
 
@@ -204,13 +204,13 @@ namespace ${ctx.solutionName}.Application.Services
         )
         {
             var entity = await _unitOfWork.${repoProperty}
-                .GetByIdAsync(id, cancellationToken);
+                .GetByIdAsync(id, cancellationToken: cancellationToken);
 
             if (entity == null)
                 return false;
 
             _unitOfWork.${repoProperty}.Remove(entity);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken: cancellationToken);
 
             InvalidateCache(id);
 
